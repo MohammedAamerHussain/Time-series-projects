@@ -1,0 +1,500 @@
+---
+title: "Assignment4"
+author: "Aamer hussain"
+date: "2/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("/Users/mohammedhussain/Desktop/UCHICAGO assigments/Time series/Assignment 4")
+```
+
+```{r}
+install.packages("pscl", repos = "https://cran.rstudio.com")
+```
+
+
+## Installing the packages 
+```{r}
+install.packages('plyr', repos = "http://cran.us.r-project.org")
+install.packages('tseries', repos = "http://cran.us.r-project.org")
+install.packages('forecast', repos = "http://cran.us.r-project.org")
+install.packages('fpp', repos = "http://cran.us.r-project.org")
+install.packages('TSA', repos = "http://cran.us.r-project.org")
+install.packages('here', repos = "http://cran.us.r-project.org")
+install.packages('tsibble', repos = "http://cran.us.r-project.org")
+```
+ 
+
+## Loading the libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library('tseries')
+library(openxlsx)
+library(reshape2)
+library(gdata)
+library(stringr)
+library(xts)
+library(forecast)
+library(zoo)
+library(janitor)
+library(lubridate)
+library(fpp)
+#library(TSA)
+#library(here)
+library(tidyverse)
+#library(ggthemes)
+library(tsibble)
+library(rlang)
+library(broom)
+library(readxl)
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+IDOT.files <- list.files(path = "/Users/mohammedhussain/Desktop/UCHICAGO assigments/Time series/Assignment 4/",
+                    pattern = "*.xls", full.names = T)
+IDOT.files <- append(IDOT.files[2:16],IDOT.files[1])
+df <- sapply(IDOT.files, read_excel, simplify=FALSE)
+df <- bind_rows(df, .id = "id")
+
+```
+
+
+
+```{r}
+df <- select(df, "...3","...5")
+colnames(df) <- c("hour","count")
+df <- df %>% filter(str_detect(hour, "00"))
+datess <- substr(IDOT.files, 79,85)
+datecol = c()
+for (i in 1:16) {datecol = append(datecol,rep.int(datess[i],24))}
+df <- add_column(df, "dates" = datecol, .after = 0)
+df <- as.data.frame(df)
+df$count <- as.numeric(df$count)
+```
+`
+
+
+# Removing the global environment variables 
+```{r}
+rm(i,IDOT.files,datecol,datess)
+```
+
+```{r}
+June.data <- df[1:360,3]
+July.data <- df[361:384,3]
+```
+
+
+```{r}
+July.data
+```
+
+
+
+```{r}
+traffic.df <- ts(df$count,frequency=24)
+```
+
+```{r}
+train.traffic = window(traffic.df, c(1,1), c(15,24))
+test.traffic = window(traffic.df, c(16,1), c(16, 24))
+```
+
+
+
+```{r}
+plot(train.traffic, xlab  = "Day in the month of June", ylab =" Traffic")
+
+```
+
+There is a very high time-based component that is part of this traffic time series as the data is highly seasonal which can be clearly seen . 
+
+
+
+```{r}
+ggAcf(train.traffic)
+
+```
+
+```{r}
+ggPacf(train.traffic)
+```
+
+Both ACF and PACF plots show strong seasonality in the traffic data
+
+
+
+# Augmented dicky fuller test
+```{r}
+adf.test(train.traffic)
+```
+Since the p-value is less than 0.05 , it means that the data is stationary .
+ADF test results imply that the hourly traffic data is stationary .
+
+
+
+### Part 1 - Use Arima(p,d,q) model to forecast. Find the model returned by R auto.arima(). Change the values of p and q and determine the best model using AICc and BIC. Do AICc and BIC select the same model as the best model?
+
+
+```{r}
+hourly.traffic <- ts(train.traffic, start = c(16,1), end = c(30,24),frequency = 24)
+ts.plot(hourly.traffic, xlab = "Day in the month of June", ylab = "traffic")
+```
+
+
+## Using AICc criteria to determine the best model 
+```{r}
+
+hourly.AICc.model <- auto.arima(hourly.traffic,
+                         stepwise=F, # using the grid wise search for the values of p and q to determine the best model.
+                         seasonal = F, #this param wll make sure that we search only for the non-seasonal models as ARIMA is used here
+                         ic = 'aicc', #specifying to select the best model on the AICc criteria
+                         trace = T) #this param lets us see what is the AICc value of each model being considered in the stepwise                                         fashion
+summary(hourly.AICc.model)
+```
+
+The  best model using the stepwise search based on the AICc criteria is ARIMA(2,0,3) with non-zero mean  with the following values :
+AIC=4455.56   AICc=4455.88   BIC=4482.77
+
+
+## Using BIC  criteria to determine the best model 
+```{r}
+hourly.BIC.model <- auto.arima(hourly.traffic,
+                        stepwise=F, #using the grid wise search for the values of p and q to determine the best model
+                        seasonal = F, #this param wll make sure that we search only for the non-seasonal models at first
+                        ic = 'bic',  # here the BIC criteria is used to find the best model.
+                        trace = T)#this param lets us see what is the AICc value of each model being considered in the stepwise                                         fashion
+summary(hourly.BIC.model)
+```
+
+
+The  best model using the stepwise search based on the AICc criteria is ARIMA(2,0,3) with non-zero mean  with the following values :
+AIC=4456.52   AICc=4456.76   BIC=4479.83
+
+
+The results are slightly different when we search for the best model based on the AICc or BIC criteria as We got different models if we select best model based on the best BIC or AICc criteria, with the values of 'q' being different. Best model based on AICC criteria has a 'q'value of 3 where as the best model based on the BIC criteria has a 'q' value of 2.
+
+The only way to see which model (whether AICc based or BIC based one) performs better is by doing the forecasting and calculating the sum of the sqaure errors.
+
+## Forecast for the July 1 using these 2 models 
+```{r}
+forecast.july.hourlyAICc <- forecast(hourly.AICc.model, h=24)
+forecast.july.hourlyBIC <- forecast(hourly.BIC.model, h=24)
+```
+
+```{r}
+hourlycompare.df<- data.frame("Hour" = seq(1,24,1),
+                "Actual values" = July.data,
+                "AICc forecast" = round(as.numeric(forecast.july.hourlyAICc$mean,1)),
+                "BIC forecast" = round(as.numeric(forecast.july.hourlyBIC$mean,1)),
+                "AICc minus BIC" = round(as.numeric(forecast.july.hourlyAICc$mean) -
+                                           as.numeric(forecast.july.hourlyBIC$mean),1))
+```
+
+```{r}
+hourlycompare.df$Actual.values
+```
+
+
+```{r}
+print.data.frame(hourlycompare.df)
+```
+
+
+```{r}
+c("AICc.SSE"=sum((July.data-forecast.july.hourlyAICc$mean)^2),
+  "BIC.SSE"=sum((July.data-forecast.july.hourlyBIC$mean)^2))
+```
+
+
+```{r}
+
+c("AICc.RMSE"=sqrt(mean((July.data-forecast.july.hourlyAICc$mean)^2)),
+  "BIC.RMSE"=sqrt(mean((July.data-forecast.july.hourlyBIC$mean)^2)))
+```
+
+Looking at both RMSE and SSE values , it s clear that the model based on the BIC criteria has performed slightly better compatred to the hourly model based on the AIC criteria because the BIC based model has lower value of SSE and also RMSE .
+
+
+
+```{r}
+plot(forecast.july.hourlyAICc,xlab="Time", ylab="Number of Vehicles",main="Forecast")
+lines(x=c(361:384), y =hourlycompare.df$Actual.values, col="red")
+```
+
+```{r}
+plot(forecast.july.hourlyBIC,xlab="Time", ylab="Number of Vehicles",main="Forecast")
+```
+
+```{r}
+plot(hourly.AICc.model$residuals, ylab = "Residuals",xlab = "DAY in the month of june ",main="plot of residuals for AIC model ARIMA(2,0,3)")
+```
+
+There is an outlier or spike looking at the residual plot, around the middle time, which suggests that our model could be improved further
+
+```{r}
+plot(hourly.BIC.model$residuals, ylab = "Residuals", xlab = "DAY in the month of june ", main="plot of residuals for BIC model ARIMA(2,0,2)")
+```
+
+
+```{r}
+par(mfrow=c(2,1))
+acf(hourly.AICc.model$residuals, main="ACF plot of residuals for AIC model ARIMA(2,0,3)")
+Pacf(hourly.AICc.model$residuals, main="pACF plot of residuals for AIC model ARIMA(2,0,3)")
+```
+
+BIC based model is the clear winner based on the SSE values and RMSE values.
+
+###Part 2 - Use day of the week seasonal ARIMA(p,d,q)(P,D,Q)s model to forecast for July 1 (which is a Monday) - note use the hourly data
+
+
+```{r}
+weekly.traffic <- ts(June.data,frequency = 168)
+```
+
+
+
+
+This is hourly data
+```{r}
+ts.plot(weekly.traffic, xlab = "week of June")
+```
+
+
+
+```{r}
+SARIMA.weekly <- auto.arima(weekly.traffic,
+                           stepwise=F,seasonal = TRUE)
+                           
+summary(SARIMA.weekly)
+```
+Output for the best model is ARIMA(0,1,2)(0,1,0)[168]   
+AIC=2249.31   AICc=2249.44   BIC=2259.07
+
+
+
+
+##Forecasting the next 24 hours (i.e. July 1)
+```{r}
+weeklySARIMA.julyforecast <- forecast(SARIMA.weekly, h=24)
+plot(weeklySARIMA.julyforecast, xlim=c(2.2, 3.2)) #showing one week
+```
+
+
+```{r}
+SARIMA.weekly.df <- data.frame(hour=(ts(July.data)),
+                  obs=July.data, 
+                  dow=weeklySARIMA.julyforecast$mean)
+melt(SARIMA.weekly.df, id.vars = "hour") %>% 
+  ggplot(aes(x=hour, y=value, group=variable, color=variable)) + 
+  geom_point() + 
+  geom_line() +
+  ggtitle('Day of Week Seasonality')
+```
+
+The forecast is quite close to the july 1 data .
+
+
+```{r}
+c("DOW.SSE"=sum((July.data-weeklySARIMA.julyforecast$mean)^2),
+  "DOW.RMSE"=sqrt(mean((July.data-weeklySARIMA.julyforecast$mean)^2)))
+```
+
+```{r}
+tsdisplay(SARIMA.weekly$residuals, main = "plot of residuals for SARIMA weekly " )
+```
+
+## Ljung-Box test for residuals
+```{r}
+checkresiduals(SARIMA.weekly)
+```
+
+The p-valueturned out to be 0.04. The p value is on the edge but we still don't  reject the null hypothesis that the residuals are white noise.
+
+Overall the forecast looks really good except for one spike or outlier in the ACF and PACF plots. However there are feweer spikes in the model which is a good sign.
+
+we see less seasonality in the ACF plot.
+
+The SARIMA weekly model BIC AICc AIC  and log likelihood performed much better than the no-seasonal models(AICc based or BIC based) that we used in part 1
+
+### Part 3 - Use hour of the day seasonal ARIMA (p,d,q)(P,D,Q)s model to forecast for the hours 8:00, 9:00, 17:00 and 18:00 on July 1
+
+
+#Hour of the day seasonal ARIMA 
+```{r}
+SARIMA.hourly <- auto.arima(ts(June.data, frequency = 24), seasonal = TRUE)
+summary(SARIMA.hourly)
+```
+
+Output for the best model is ARIMA(2,0,2)(2,1,0)[24] 
+
+```{r}
+hourlySARIMA.julyforecast <- forecast(SARIMA.hourly, h=24)
+data.frame("Actual values" = July.data[c(8,9,17,18)],
+           "Hourly.Model" = hourlySARIMA.julyforecast$mean[c(8,9,17,18)],
+            row.names = c('8:00', '9:00', '17:00', '18:00'))
+
+```
+
+```{r}
+plot(hourlySARIMA.julyforecast,ylab = "traffic",xlab = "time of the day", xlim=c(2.2, 3.2))
+```
+
+The shape of hourly SARIMA plot is not quite as similar to the plot of the weekly SARIMA forecasting model.
+
+```{r}
+SARIMA.hourly.df <- data.frame(hour=(ts(July.data)),
+                  obs=July.data, 
+                  hod=hourlySARIMA.julyforecast$mean)
+melt(SARIMA.hourly.df, id.vars = "hour") %>% 
+  ggplot(aes(x=hour, y=value, group=variable, color=variable)) + 
+  geom_point() + 
+  geom_line() +
+  ggtitle('Hour of the day Seasonality')
+```
+
+
+
+```{r}
+c("DOW.SSE"=sum((July.data-hourlySARIMA.julyforecast$mean)^2),
+  "DOW.RMSE"=sqrt(mean((July.data-hourlySARIMA.julyforecast$mean)^2)))
+```
+
+
+# Plotting the residuals
+```{r}
+tsdisplay(SARIMA.hourly$residuals, main = "plot of residuals for SARIMA hourly " )
+```
+
+## Ljung-Box test for residuals
+```{r}
+checkresiduals(SARIMA.hourly)
+```
+
+We can still see some peaks in the ACF plot.
+
+Ljung-Box test for residuals: p-value =  0.2 . The residuals are white noise in this case. we don't reject the null hypothesis that the residuals are white noise as the p value is higher than 0.05.
+
+
+The model values of  AIC AICc BIC and log likelihood performed  are worse compared to the day of the week model or the weekly SARIMA model but this model performed  slightly better compared the non-seasonal models( AICc based and BIC based in part 1).
+
+
+### Part 4 - For the July 1 8:00, 9:00, 17:00 and 18:00 forecasts, which model is better (part 2 or part 3) ?
+
+
+## Comparing the acutal values with the predicted model between  the weekly SARIMA as well as hourly SARIMA model
+```{r}
+data.frame("Actual values" = July.data[c(8,9,17,18)],
+           "Weekly.Model" = weeklySARIMA.julyforecast$mean[c(8,9,17,18)],
+           "Hourly.Model" = hourlySARIMA.julyforecast$mean[c(8,9,17,18)],
+           row.names = c('8:00', '9:00', '17:00', '18:00'))
+```
+
+## Deviation from the actual values or the error values for the  weekly SARIMA as well as hourly SARIMA model
+```{r}
+Weekly.SARIMA.Error <- July.data[c(8,9,17,18)] - weeklySARIMA.julyforecast$mean[c(8,9,17,18)]
+Hourly.SARIMA.Error <- July.data[c(8,9,17,18)] - hourlySARIMA.julyforecast$mean[c(8,9,17,18)]
+data.frame("Weekly.Error" = round(abs(Weekly.SARIMA.Error),2),
+           "Hourly.Error" = round(abs(Hourly.SARIMA.Error),2),
+           row.names = c('8:00', '9:00', '17:00', '18:00'))
+```
+
+Clearly the day of the week seasonal ARIMA has performed well compared to the hour of the day seasonal ARIMA model in terms of the error values .
+
+# Sum of the square errors for the weekly SARIMA as well as hourly SARIMA model
+#(Only looking at July 1st 8:00, 9:00, 17:00 and 18:00 hours)
+```{r}
+c('Weekly-SARIMA SSE'=round(sum(Weekly.SARIMA.Error^2),1),
+  'Hourly-SARIMA SSE'=round(sum(Hourly.SARIMA.Error^2),1))
+```
+
+Clearly the day of the week seasonal ARIMA has performed well compared to the hour of the day seasonal ARIMA model in terms of the sum of the square error values .
+
+# Root mean  square errors(RMSE) for the weekly SARIMA as well as hourly SARIMA model
+#(Only looking at July 1st 8:00, 9:00, 17:00 and 18:00 hours)
+```{r}
+c('Weekly-SARIMA SSE'=sqrt(mean(Weekly.SARIMA.Error)^2),
+  'Hourly-SARIMA SSE'=sqrt(mean(Hourly.SARIMA.Error^2)))
+```
+
+Clearly the day of the week seasonal ARIMA has performed well compared to the hour of the day seasonal ARIMA model in terms of the Root mean square error values .
+
+
+```{r}
+c('AIC weekly SARIMA'= SARIMA.weekly$aicc,
+  'AIC hourly SARIMA'=SARIMA.hourly$aicc)
+```
+
+Clearly the day of the week seasonal ARIMA has performed well compared to the hour of the day seasonal ARIMA model in terms of the AICc values .
+
+```{r}
+c('AIC weekly SARIMA'= SARIMA.weekly$aic,
+  'AIC hourly SARIMA'=SARIMA.hourly$aic)
+```
+
+Clearly the day of the week seasonal ARIMA has performed well compared to the hour of the day seasonal ARIMA model in terms of the AIC values .
+
+```{r}
+c('BIC weekly SARIMA'= SARIMA.weekly$bic,
+  'BIC hourly SARIMA'=SARIMA.hourly$bic)
+```
+
+In this case  day of the week seasonal ARIMA has not performed well compared to the hour of the day seasonal ARIMA model in terms of the error values as the model with the higher value of BIC is desired .
+
+```{r}
+accuracy(SARIMA.weekly)
+
+```
+
+```{r}
+accuracy(SARIMA.hourly)
+```
+
+Besides that the hourly SARIMA(hour of the day seasonal ARIMA) has a higher RSME on the training set compared to the weekly SARIMA(day of the week seasonal ARIMA) ( 101.95 vs 60.97 )
+
+WE can now say that the seasonality based on day of week is much much better at forecasting the traffic or the number of vehicles at the hours of  8:00, 9:00, 17:00, and 18:00 than seasonality based on hour of day. 
+
+The only hour of the day on july 1 that the hourly SARIMA model did a better job predicting number of vehicles or traffic was at 17:00, the rest of the other forecasted values or predictions were over 10 times further off than the day of the week seasonal ARIMA model.
+
+With the exception of hours 19:00 and 20:00 , It obviously looks like the weekly SARIMA model or the day of the week model (blue line) does a better job of following the movement of the traffic or the number of vehicles or actual values (black line) in the graph below, for . By connecting the dots this all  makes sense because a week prior on June 24 there was a 0 count at 19:00 and 253 at 20:00. There could  have been perhaps some unsual events or activity due to construction or some other exogenous factor.
+
+
+```{r}
+plot(seq(1,24), July.data, col = 'black', 
+     main = "Forecasted Values versus Actual for July 1", 
+     type = 'o', xlab = 'Hour', ylab = "Count", axes = FALSE)
+axis(side=1, at=seq(1,24,2))
+axis(side=2, at=seq(0, 1250, 300))
+box()
+lines(seq(1,24), weeklySARIMA.julyforecast$mean, col="blue")
+lines(seq(1,24), hourlySARIMA.julyforecast$mean, col="orange")
+legend(8.5,500, legend=c("Actual Values", "Weekly SARIMA", "Hourly SARIMA"), 
+       col=c("black", "blue", "orange"), lty=1:3, cex=0.8)
+```
+
+As you can clearly see that day of the week seasonal ARIMA has fit well to the actual July traffic data compared to the hour of the day seasonal ARIMA.
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+

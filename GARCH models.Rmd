@@ -1,0 +1,1548 @@
+---
+title: "Assignment 7"
+author: "Aamer hussain"
+date: "3/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+setwd("/Users/mohammedhussain/Desktop/UCHICAGO assigments/Time series/Assignment 7")
+```
+
+
+```{r}
+install.packages('ggplot2', repos = "http://cran.us.r-project.org")
+```
+
+```{r}
+library("forecast")
+library("xts")
+library("TSA")
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(tidyverse)
+library(ggthemes)
+library(tsibble)
+library(zoo)
+library(tseries)
+```
+
+```{r}
+
+df_cmeS <- read.csv("cmeS.csv")
+df_immS <- read.csv("immS.csv")
+df_iomS <- read.csv("iomS.csv")
+
+```
+
+
+# Lets create a funcion that creates a uniform time series by formatting the date , grouping by month and then perform interpolation for the missing values using spline interpolation
+```{r}
+
+
+create_uniform_ts <- function(k, interpolation='spline') {
+  # Formatting of the date
+  k$DateOfSale <- as.Date(k$DateOfSale, '%m/%d/%Y')
+  k$yearmon <- as.yearmon(k$DateOfSale)
+  
+  # Grouping by month
+  k <- k %>%
+    group_by(yearmon) %>%
+    summarize(price=mean(price)) %>%
+    data.frame() %>%
+    merge(data.frame(yearmon = as.yearmon(2001 + seq(0, 12*13-1)/12)),all=T)
+  
+  # perform Interpolation
+  k$interpolated <- is.na(k$price)
+  x = k$yearmon
+  if('constant' %in% interpolation) {
+    k$constant <- approx(k$yearmon, k$price, xout=x, method = "constant")$y  
+  }
+  if('linear' %in% interpolation) {
+    k$linear <- approx(k$yearmon, k$price, xout=x)$y
+  }
+  if('spline' %in% interpolation) {
+    k$spline <- spline(k, n=nrow(k))$y
+  }
+  k
+}
+
+
+```
+
+
+```{r}
+cme <- create_uniform_ts(df_cmeS,interpolation = c('spline'))
+imm <- create_uniform_ts(df_immS, interpolation = c('spline'))
+iom <- create_uniform_ts(df_iomS, interpolation = c('spline'))
+```
+
+```{r}
+
+```
+
+
+```{r}
+cme <-  cme[,-c(2,3)]
+names(cme) <- c("Date","price")
+cme$Division <- c("CME")
+cme
+```
+
+```{r}
+imm <-  imm[,-c(2,3)]
+names(imm) <- c("Date","price")
+imm$Division <- c("IMM")
+imm
+
+```
+
+
+```{r}
+iom <-  iom[,-c(2,3)]
+names(iom) <- c("Date","price")
+iom$Division <- c("IOM")
+iom
+
+```
+
+```{r}
+contract_vol <- read.csv("Contracts_Volume.csv", stringsAsFactors = F)
+contract_class <- read.csv("Contracts_Classification.csv", stringsAsFactors = F)
+```
+
+
+```{r}
+head(contract_vol)
+```
+
+```{r}
+contract_vol$Electronic.Volume <- as.numeric(str_replace_all(contract_vol$Electronic.Volume, ',', ''))
+```
+
+
+```{r}
+contract_vol$Floor.Volume <- contract_vol$Total.Volume - contract_vol$Electronic.Volume
+```
+
+
+```{r}
+head(contract_class)
+```
+
+
+```{r}
+df <- contract_vol %>% inner_join(contract_class,
+             by = c("Commodity.Indicator" = "Commodity.Code"))
+```
+
+
+```{r}
+nrow(unique(df))
+```
+
+```{r}
+head(unique(df))
+```
+
+```{r}
+df$Date <- as.Date(df$Date, '%m/%d/%Y')
+df$Date <- as.yearmon(df$Date)
+head(df)
+```
+
+
+To find the volume, for example index products, add both the futures and options volume for the same index product for a month.
+
+You need to write a program, one program should work for all 3 badge types. Keep in mind -
+1. Commodities are traded on the Floor (crazy people screaming at each other in the pits like you have seen in movies) and electronically. The Volume data set has Total volume and Electronic volume. You need to calculate the Floor volume.
+2. Sort out of the volume data, those commodities that are relevant for the particular badge (CME, IMM, IOM). Keep in mind that the CME can trade EVERYTHING, not just what the list says.
+3. Aggregate the data for each Commodity Indicator for each month. Don't worry about futures / options, just add them all up.
+
+```{r}
+
+divisions <-c(cme = "cme",imm = "imm",iom = "iom")
+
+
+table_create <- function(x,division){
+
+  
+   if (division == "iom") {
+      x %>% 
+  dplyr::filter(Division %in% c('IOM')) %>% group_by(Date, Division) %>%
+  summarize(electronic.volume = sum(Electronic.Volume), total.volume = sum(Total.Volume), 
+            floor.volume = sum(Floor.Volume))
+    }
+    
+   else if (division == "cme") { 
+     x %>% group_by(Date) %>% summarize(electronic.volume = sum(Electronic.Volume), total.volume = sum(Total.Volume), 
+    floor.volume=sum(Floor.Volume)) %>% mutate(Division = 'CME') }
+  
+    else if (division == "imm") {
+      x %>% 
+  dplyr::filter(Division %in% c('IMM')) %>%
+  group_by(Date, Division) %>% summarize(electronic.volume = sum(Electronic.Volume), total.volume = sum(Total.Volume),   floor.volume = sum(Floor.Volume))
+  }
+
+}
+```
+
+### Table data creation in this format :
+
+Date Elec.Vol Tot.Vol Flo.Vol
+01/01/2001 4,769,234 31,746,144 26,976,910
+
+```{r}
+cme_vol <- table_create(df,"cme")
+imm_vol <- table_create(df,"imm")
+iom_vol <- table_create(df,"iom")
+```
+
+
+```{r}
+cme_vol
+```
+
+```{r}
+imm_vol
+```
+
+```{r}
+iom_vol
+```
+
+
+## Monthly floor volume with respect to time
+
+```{r}
+total_seats_vol <- rbind(data.frame(cme_vol), data.frame(imm_vol),data.frame(iom_vol))
+ggplot(total_seats_vol, aes(x=Date, y=floor.volume, color=Division)) + geom_line() + labs(title='Monthly Floor Volume ', y='Floor Volume', x='Time')
+```
+
+## Monthly Electronic volume with respect to time
+```{r}
+ggplot(total_seats_vol, aes(x=Date, y=electronic.volume, color=Division)) + geom_line() + labs(title='Monthly Electronic Volume ', y='electronic Volume', x='Time')
+```
+
+## Monthly Total volume with respect to time
+
+```{r}
+ggplot(total_seats_vol, aes(x=Date, y=total.volume, color=Division)) + geom_line() + labs(title='Monthly Total Volume ', y='Total Volume', x='Time')
+```
+
+### Exploratory Data analysis
+
+```{r}
+total_seats_price <- rbind(data.frame(cme), data.frame(imm),data.frame(iom))
+total_seats_price
+```
+
+```{r}
+
+seats_volume_price <- total_seats_vol %>%
+  inner_join(total_seats_price, c("Division", "Date")) %>%
+  group_by(Division) %>% mutate(floor_vs_price = cor(floor.volume, price),elect_vs_price = cor(electronic.volume, price),total_vs_price = cor(total.volume, price),elect_vs_total = cor(electronic.volume, total.volume),
+  ) %>% gather(key = corr_group, value = corr, -c(1:6))
+  
+
+```
+
+```{r}
+total_seats_vol
+```
+
+## Exploratory data analysis to find initial data relationships such as correlations
+
+```{r}
+seats_volume_price %>% filter(corr_group != "elect_vs_total") %>% ggplot(aes(Division, corr, fill = corr_group)) +
+  geom_col(position = "dodge") + scale_fill_viridis_d(option  ="plasma",name = NULL, labels = c("Elect vs. Price", 
+   "Floor vs. Price", "Total vs. Price")) + scale_x_discrete(labels = toupper) + scale_y_continuous(breaks = seq(
+      plyr::round_any(min(seats_volume_price$corr), .10, ceiling),max(seats_volume_price$corr),.20),
+    labels = scales::percent_format(accuracy = 1)) +labs(title = "Volumes vs. Price",x = "Division",
+       y = "Correlation (Pearson)")
+```
+
+For the CME seat class, the Total volume shows the highest correlation with CME seat prices 
+
+For the IMM seat class, the Total volume again shows the highest correlation with IMM seat prices 
+
+For the IOM seat class, the Floor volume shows the highest correlation with IOM seat prices 
+
+
+```{r}
+seats_volume_price %>% filter(corr_group == "elect_vs_total") %>% ggplot(aes(Division, corr, fill = corr_group)) +
+  geom_col(position = "dodge") + scale_fill_viridis_d(option  ="plasma") + scale_x_discrete(labels = toupper) +
+  scale_y_continuous(breaks = seq(plyr::round_any(min(seats_volume_price$corr), .10, ceiling),
+      max(seats_volume_price$corr),.20),labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Electronic vs. Total",subtitle = "Significant correlation for all divisions",
+    x = "Division",y = "Correlation (Pearson)") +theme(legend.position = "none")
+```
+
+
+Electronic volume Vs Total volume showws significant correlation among all the seat classes.
+
+
+## CME volume data with the prices
+```{r}
+cme_vol_price <-  cme_vol %>% inner_join(cme, c("Division", "Date"))
+cme_vol_price
+```
+
+## IMM volume data with the prices
+```{r}
+imm_vol_price <-  imm_vol %>% inner_join(imm, c("Division", "Date"))
+imm_vol_price
+```
+
+## IOM volume data with the prices
+```{r}
+iom_vol_price <-  iom_vol %>% inner_join(iom, c("Division", "Date"))
+iom_vol_price
+```
+
+### Splitting the time series into Train and Test
+
+## Train
+```{r}
+cme_train <- dplyr::filter(cme_vol_price, Date < 2013)
+imm_train <- dplyr::filter(imm_vol_price, Date < 2013)
+iom_train <- dplyr::filter(iom_vol_price, Date < 2013)
+```
+
+
+## Test
+```{r}
+cme_test <- dplyr::filter(cme_vol_price, Date >= 2013)
+imm_test <- dplyr::filter(imm_vol_price, Date >= 2013)
+iom_test <- dplyr::filter(iom_vol_price, Date >= 2013)
+```
+
+####  Task A:
+
+Use the following algorithms:
+
+    Linear regression (seat price is dependent, volume(s) independent)
+    Linear regression with ARMA errors (use arima with xreg)
+    Holt Winters
+    ARIMA
+    Seasonal ARIMA (SARIMA) - here seasonality is monthly
+    Fractional ARIMA (ARFIMA) - check applicability first using the ACF
+    ARMA and GARCH combination - use the fGarch R library and garchFit()
+
+
+### 1. Linear regression (seat price is dependent, volume(s) independent)
+
+
+## CME - linear regression
+```{r}
+lm.cme <- lm(price ~ total.volume, data=cme_train)
+summary(lm.cme)
+```
+
+## ACF plot of the residuals 
+```{r}
+acf(lm.cme$residuals, main = " ACF for CME seat", lag = 50)
+```
+
+
+
+```{r}
+checkresiduals(lm.cme$residuals)
+```
+
+There is a lot of auto-correlation among the residuals of the linear regression of CME seat price vs Total volume
+
+```{r}
+volume_vs_price_plot <- function(ts, division, volume) {
+  X <- ts$Date
+  Y1 <- ts$price
+  Y2 <- volume
+  par(mar = c(5, 5, 3, 5))
+  plot(x=X, y=Y1, type ="l", ylab = paste("Price of",division,"Seat"),main = paste(division, "Seat price & Volume"),   xlab = "Time", xaxt='n',col = "blue") 
+  par(new = TRUE)
+  plot(x=X, y=Y2, type = "l", xaxt = "n", yaxt = "n", ylab = "", xlab = "", col = "red", lty = 2)
+  axis(side = 4)
+  mtext(" Volume", side = 4, line = 3)
+  legend("topleft", c("Seat Price", " Volume"),col = c("blue", "red"), lty = c(1, 2))
+}
+
+```
+
+
+## CME seat price Vs volume
+
+```{r}
+volume_vs_price_plot(cme_train, 'CME', cme_train$total.volume)
+```
+
+
+```{r}
+price_vs_volume_scatter <- function(ts, division, volume) {
+  ggplot(ts, aes(x=volume, y=price)) + geom_point() + geom_smooth(method='lm') + 
+    labs(title=paste(division, 'Seat  Volume vs. Price'),subitle='Linear Model')
+}
+```
+
+
+## Regression line for CME volume Vs Price
+```{r}
+price_vs_volume_scatter(cme_train, 'CME', cme_train$total.volume)
+```
+
+
+## IMM - linear regression
+
+```{r}
+lm.imm <- lm(price ~ total.volume, data=imm_train)
+summary(lm.imm)
+```
+
+## ACF plot of the residuals from the linear regression of IMM seat price vs total volume 
+```{r}
+acf(lm.imm$residuals, main = " ACF for IMM seat", lag = 50)
+```
+
+```{r}
+checkresiduals(lm.imm$residuals)
+```
+
+There is a lot of auto-correlation among the residuals of the linear regression of IMM seat price vs Total volume
+
+```{r}
+volume_vs_price_plot(imm_train, 'IMM', imm_train$total.volume)
+```
+
+
+
+```{r}
+price_vs_volume_scatter(imm_train, 'IMM', imm_train$total.volume)
+```
+
+
+## IOM - linear regression
+
+```{r}
+lm.iom <- lm(price ~ floor.volume, data=iom_train)
+summary(lm.iom)
+```
+
+
+IOM linear regression residuals not stationary 
+
+## ACF plot of the residuals from the linear regression of IOM set price vs Floor volume
+
+```{r}
+acf(lm.iom$residuals, main = " ACF for IOM seat", lag = 50)
+```
+
+```{r}
+checkresiduals(lm.iom$residuals)
+```
+
+
+
+
+There is a lot of auto-correlation among the residuals of the linear regression of IOM seat price vs Floor volume
+```{r}
+volume_vs_price_plot(iom_train, 'IOM', iom_train$floor.volume)
+```
+
+
+
+```{r}
+price_vs_volume_scatter(iom_train, 'IOM', iom_train$floor.volume)
+```
+
+
+### 2.Linear regression with ARMA errors (use arima with xreg)
+
+## CME
+
+```{r}
+lm.arima.cme <- auto.arima(cme_train$price, xreg=cme_train$total.volume)
+summary(lm.arima.cme)
+```
+
+```{r}
+checkresiduals(lm.arima.cme$residuals)
+```
+
+The residuals slightly look similar to white noise but there is still a lot of auto-correlation .
+
+
+```{r}
+plot(forecast(lm.arima.cme, h=12, xreg = cme_test$total.volume), ylab = "Price forecast")
+
+```
+
+```{r}
+acf(lm.arima.cme$residuals, 48, main='ACF plot for CME')
+```
+
+
+## IMM
+
+```{r}
+lm.arima.imm <- auto.arima(imm_train$price, xreg=imm_train$total.volume)
+summary(lm.arima.imm)
+```
+
+```{r}
+checkresiduals(lm.arima.imm$residuals)
+```
+
+IMM residuals look better than CME residuals 
+
+The residuals slightly look similar to white noise but there is still a lot of auto-correlation .
+```{r}
+plot(forecast(lm.arima.imm, h=12, xreg = imm_test$total.volume), ylab = "Price forecast")
+
+```
+
+```{r}
+acf(lm.arima.imm$residuals, 48, main='ACF plot for IMM')
+```
+
+## IOM
+
+```{r}
+lm.arima.iom <- auto.arima(iom_train$price, xreg=iom_train$floor.volume)
+summary(lm.arima.iom)
+```
+
+```{r}
+checkresiduals(lm.arima.iom$residuals)
+```
+
+The residuals slightly look similar to white noise but there is still a lot of auto-correlation .
+
+```{r}
+plot(forecast(lm.arima.iom, h=12, xreg = iom_test$floor.volume))
+
+```
+
+```{r}
+acf(lm.arima.iom$residuals, 48, main='ACF plot for IOM')
+```
+
+
+### 3. Holt Winters
+
+## CME
+```{r}
+holtwinters.cme <- HoltWinters(ts(cme_train$price, start=2001, frequency = 12))
+c(holtwinters.cme$alpha, holtwinters.cme$beta, holtwinters.cme$gamma)
+```
+
+
+```{r}
+holtwinters.cme
+```
+
+
+```{r}
+checkresiduals(holtwinters.cme)
+```
+
+There is definitely less correlation among the residuals of the holt winters mkdelling on CME seat price vs Total volume 
+
+```{r}
+plot(forecast(holtwinters.cme, h=12), ylab = "Price")
+```
+
+```{r}
+acf(residuals(holtwinters.cme), 48, main='ACF plot for CME')
+```
+
+
+very less correlation among the residuals . Holt winters did a better job compared to linear regression and regression with ARMA errors
+
+## IMM
+```{r}
+holtwinters.imm <- HoltWinters(ts(imm_train$price, start=2001, frequency = 12))
+c(holtwinters.imm$alpha, holtwinters.imm$beta, holtwinters.imm$gamma)
+```
+
+
+```{r}
+holtwinters.imm
+```
+
+
+```{r}
+checkresiduals(holtwinters.imm)
+```
+
+
+Holt winters performed slightly well for the IMM compared to CME .
+
+The residuals look similar to white noise and also the auto-correlation is less of a problem with the Holt winters method
+
+```{r}
+plot(forecast(holtwinters.imm, h=12), ylab = "Price")
+```
+
+```{r}
+acf(residuals(holtwinters.imm), 48, main='ACF plot for IMM')
+```
+
+
+## IOM
+```{r}
+holtwinters.iom <- HoltWinters(ts(iom_train$price, start=2001, frequency = 12))
+c(holtwinters.iom$alpha, holtwinters.iom$beta, holtwinters.iom$gamma)
+```
+
+
+```{r}
+holtwinters.iom
+```
+
+
+```{r}
+checkresiduals(holtwinters.iom)
+```
+
+Very less correlation among the residuals compared to the previous methods.
+
+```{r}
+plot(forecast(holtwinters.iom, h=12), ylab = "Price")
+```
+
+```{r}
+acf(residuals(holtwinters.iom), 48, main='ACF plot for IOM')
+```
+
+### 4. ARIMA
+
+## CME
+```{r}
+arima.cme <- auto.arima(cme_train$price, seasonal = F, stepwise = FALSE)
+summary(arima.cme)
+```
+
+```{r}
+plot(forecast(arima.cme, h=12), ylab ='Price')
+```
+
+
+```{r}
+acf(residuals(arima.cme), 48, main='ACF plot for CME')
+```
+
+ARIMA does an excellent job with the residuals looking more like white noise with not much correlation . 
+
+```{r}
+checkresiduals(arima.cme)
+```
+
+
+
+## IMM
+```{r}
+arima.imm <- auto.arima(imm_train$price, seasonal = F, stepwise = FALSE)
+summary(arima.imm)
+```
+
+```{r}
+plot(forecast(arima.imm, h=12), ylab ='Price')
+```
+
+
+```{r}
+acf(residuals(arima.imm), 48, main='ACF plot for IMM')
+```
+
+ARIMA does an excellent job for IMM compared to CME with the residuals looking more like white noise with not much correlation . 
+
+```{r}
+checkresiduals(arima.imm)
+```
+
+
+
+## IOM
+```{r}
+arima.iom <- auto.arima(iom_train$price, seasonal = F, stepwise = FALSE)
+summary(arima.iom)
+```
+
+```{r}
+plot(forecast(arima.iom, h=12), ylab ='Price')
+```
+
+
+```{r}
+acf(residuals(arima.iom), 48, main='ACF plot for IOM')
+```
+
+```{r}
+checkresiduals(arima.iom)
+```
+
+ARIMA does an excellent job with the residuals looking more like white noise with not much correlation . 
+
+
+Overall ARIMA  did a very good job but there is an increasing variance after certain point in time .
+
+### 5. Seasonal ARIMA (SARIMA) - here seasonality is monthly
+
+## CME
+```{r}
+sarima.cme <- auto.arima(cme_train$price,seasonal = T,stepwise = FALSE)
+summary(sarima.cme)
+```
+
+```{r}
+checkresiduals(sarima.cme)
+```
+
+There is less auto-correlation similar to ARIMA but there is still a problem of heteroscedasticity in the residuals of the SARIMA CME model
+
+```{r}
+plot(forecast(sarima.cme, h=12), ylab ='Price')
+```
+
+```{r}
+acf(residuals(sarima.cme), 48, main='ACF for SARIMA CME Seat')
+```
+
+
+
+## IMM
+```{r}
+sarima.imm <- auto.arima(imm_train$price,seasonal = T,stepwise = FALSE)
+summary(sarima.imm)
+```
+
+```{r}
+checkresiduals(sarima.imm)
+```
+
+There is less auto-correlation similar to ARIMA but there is still a problem of heteroscedasticity in the residuals of the SARIMA IMM model
+
+```{r}
+plot(forecast(sarima.imm, h=12), ylab ='Price')
+```
+
+```{r}
+acf(residuals(sarima.imm), 48, main='ACF for SARIMA IMM Seat')
+```
+
+
+
+## IOM
+```{r}
+sarima.iom <- auto.arima(iom_train$price,seasonal = T,stepwise = FALSE)
+summary(sarima.iom)
+```
+
+```{r}
+checkresiduals(sarima.iom)
+```
+
+There is less auto-correlation similar to ARIMA but there is still a problem of heteroscedasticity in the residuals of the SARIMA CME model
+
+```{r}
+plot(forecast(sarima.iom, h=12), ylab ='Price')
+```
+
+```{r}
+acf(residuals(sarima.iom), 48, main='ACF for SARIMA IOM Seat')
+```
+
+
+
+### 6. Fractional ARIMA (ARFIMA) - check applicability first using the ACF
+
+
+Check applicability first using the ACF. 
+
+The time series can only be a good candidate for  ARFIMA model if the ACF plot decays slowly over a period of time
+ARFIMA models are really good for detecting long-memory.
+
+If any time series has remaining existent autocorrelation at deeper lags , then it is an indication that the series has a long memory or it has a depedence on lots of lagged values.
+
+
+## CME
+
+
+```{r}
+acf(cme_train$price, 48)
+```
+
+It is definitely a slowly decaying plot , so applying ARFIMA to the CME price data makes sense.
+
+```{r}
+arfima.cme <- arfima(ts(cme_train$price, start=2001, frequency = 12))
+summary(arfima.cme)
+```
+
+
+```{r}
+plot(forecast(arfima.cme, h=12), ylab = "Price")
+```
+
+## ACF plot fo the residuals 
+```{r}
+acf(arfima.cme$residuals, 48, main=' ACF plot for the residuals of CME seat')
+```
+
+very less autocorrelation in the residuals 
+
+```{r}
+checkresiduals(arfima.cme$residuals)
+```
+
+very minimal auto correlation but there is still lot of heteroscedasticity in the residuals.
+
+## IMM
+
+```{r}
+acf(imm_train$price, 120)
+```
+
+It is long memory and It is definitely a slowly decaying plot , so applying ARFIMA to the IMM price data makes sense.
+
+```{r}
+arfima.imm <- arfima(ts(imm_train$price, start=2001, frequency = 12))
+summary(arfima.imm)
+```
+
+
+```{r}
+plot(forecast(arfima.imm, h=12), ylab = "Price")
+```
+
+
+```{r}
+checkresiduals(arfima.imm$residuals)
+```
+
+very minimal auto correlation but there is still lot of heteroscedasticity in the residuals but less compared to the CME 
+
+
+```{r}
+acf(arfima.imm$residuals, 48, main=' ACF plot for the residuals of IMM seat')
+```
+
+
+
+##IOM
+
+```{r}
+acf(iom_train$price, 120)
+```
+
+
+slow decaying plot , hence ARFIMA can be applied to the IOM data for long memory time series modelling .
+```{r}
+arfima.iom <- arfima(ts(iom_train$price, start=2001, frequency = 12))
+summary(arfima.iom)
+```
+
+
+
+```{r}
+plot(forecast(arfima.iom, h=12), ylab = "Price")
+```
+
+
+```{r}
+acf(arfima.iom$residuals, 48, main=' ACF plot for the residuals of IOM seat')
+```
+
+
+```{r}
+checkresiduals(arfima.iom$residuals)
+```
+
+very minimal auto correlation but there is still some level of heteroscedasticity in the residuals at certain lags.
+
+
+
+### 7. ARMA and GARCH combination - use the fGarch R library and garchFit()
+
+
+```{r}
+install.packages("fGarch", repos = "http://cran.us.r-project.org")
+library("fGarch")
+```
+
+
+GARCH models are used when a time series displays heteroskedasticity, 
+that is, non-constant variance.  Specifically when the variance of the errors is 
+autocorrelated.
+
+
+## CME
+
+```{r}
+acf(cme_train$price)
+
+```
+
+```{r}
+acf(cme_train$price^2)
+```
+
+The ACF of the CME price time series shows autocorrelation
+
+the ACF of the squared CME price time series also shows autocorrelation indicating that the variance of the same data might also have autocorrelation.
+
+
+
+```{r}
+plot.ts(cme_train$price)
+```
+
+This data from CME seat price does not really look stationary . So we have to do box-cox transformation or log transformation and then first differencing in order to make it stationary 
+
+# Log transformation and then first differencing
+```{r}
+cme_train_price_xts <- xts(cme_train$price, order.by = cme_train$Date)
+log.cme <- log(cme_train_price_xts)
+```
+
+# first differencing 
+```{r}
+log.cme <- diff(log.cme)[-1]
+plot(log.cme)
+```
+
+
+Now the data looks stationary . Lets perform a few statistical tests to see if the CME price data is stationary or not .
+
+```{r}
+adf.test(log.cme)
+```
+
+ We can reject the null hypothesis as p-val < 0.05 . Hence according to ADF test , the CME log price data is stationary .
+```{r}
+kpss.test(log.cme)
+```
+
+ We cannot reject the null hypothesis as p-val > 0.05 . Hence according to KPSS test , the CME log price data is stationary .
+ 
+ 
+# finding the values of AR terms and MA terms or p,q
+```{r}
+
+arma.cme <- auto.arima(log.cme)
+summary(arma.cme)
+```
+
+Based on the best model results from the auto.arima summary , we will be going with AR/p = 0 and MA/q =0
+```{r}
+garch.cme <- garchFit(~arma(0,0) + garch(1,1), data=ts(log.cme, frequency = 12), cond.dist = "std", trace=F)
+summary(garch.cme)
+```
+
+
+```{r}
+checkresiduals(garch.cme@residuals,48, main='')
+```
+
+There is very less heteroscedasticity in the residuals using GARCH compared to previous models and the residuals look very similar to white noise.
+
+## ACF for residuals from CME GARCH 
+```{r}
+
+acf(garch.cme@residuals,48, main='')
+```
+
+No auto correlation at all in the residuals . GARCH did a very good job.
+
+## Predictions from GARCH for CME seat price 
+```{r}
+predict(garch.cme, 12, plot = T)[0]
+```
+
+
+```{r}
+McLeod.Li.test(y=residuals(garch.cme))
+```
+
+## IMM 
+
+```{r}
+acf(imm_train$price)
+
+```
+
+```{r}
+acf(imm_train$price^2)
+```
+
+
+While the ACF of the time series shows autocorrelation, the ACF of the 
+squared time series shows that the variance might also have autocorrelation.
+
+
+```{r}
+plot.ts(imm_train$price)
+```
+
+This data from IMM seat price does not really look stationary . So we have to do box-cox transformation or log transformation and then first differencing in order to make it stationary 
+
+# Log transformation and then first differencing
+```{r}
+imm_train_price_xts <- xts(imm_train$price, order.by = imm_train$Date)
+log.imm <- log(imm_train_price_xts)
+```
+
+# first differencing 
+```{r}
+log.imm <- diff(log.imm)[-1]
+plot(log.imm)
+```
+
+
+Now the data looks stationary . Lets perform a few statistical tests to see if the IMM price data is stationary or not .
+
+```{r}
+adf.test(log.imm)
+```
+
+ We can reject the null hypothesis as p-val < 0.05 . Hence according to ADF test , the IMM log price data is stationary .
+```{r}
+kpss.test(log.imm)
+```
+
+ We cannot reject the null hypothesis as p-val > 0.05 . Hence according to KPSS test , the IMM log price data is stationary .
+ 
+ 
+# finding the values of AR terms and MA terms or p,q
+```{r}
+
+arma.imm <- auto.arima(log.imm)
+summary(arma.imm)
+```
+
+Based on the best model results from the auto.arima summary , we will be going with AR/p = 0 and MA/q =2
+```{r}
+garch.imm <- garchFit(~arma(0,2) + garch(1,1), data=ts(log.imm, frequency = 12), cond.dist = "std", trace=F)
+summary(garch.imm)
+```
+
+
+## ACF for residuals from IMM GARCH 
+```{r}
+
+acf(garch.imm@residuals,48, main='')
+```
+
+
+```{r}
+
+checkresiduals(garch.imm@residuals,48, main='')
+```
+
+There is very less heteroscedasticity in the residuals using GARCH compared to previous models and the residuals look very similar to white noise.
+
+## Predictions from GARCH for IMM seat price 
+```{r}
+predict(garch.imm, 12, plot = T)[0]
+```
+
+
+```{r}
+McLeod.Li.test(y=residuals(garch.imm))
+```
+
+
+##IOM 
+
+```{r}
+acf(iom_train$price)
+
+```
+
+```{r}
+acf(iom_train$price^2)
+```
+
+
+While the ACF of the time series shows autocorrelation, the ACF of the 
+squared time series shows that the variance might also have autocorrelation.
+
+
+```{r}
+plot.ts(iom_train$price)
+```
+
+This data from IOM seat price does not really look stationary . So we have to do box-cox transformation or log transformation and then first differencing in order to make it stationary 
+
+# Log transformation and then first differencing
+```{r}
+iom_train_price_xts <- xts(iom_train$price, order.by = iom_train$Date)
+log.iom <- log(iom_train_price_xts)
+```
+
+# first differencing 
+```{r}
+log.iom <- diff(log.iom)[-1]
+plot(log.iom)
+```
+
+
+Now the data looks stationary . Lets perform a few statistical tests to see if the IOM price data is stationary or not .
+
+```{r}
+adf.test(log.iom)
+```
+
+ We can reject the null hypothesis as p-val < 0.05 . Hence according to ADF test , the IMM log price data is stationary .
+```{r}
+kpss.test(log.iom)
+```
+
+ We cannot reject the null hypothesis as p-val > 0.05 . Hence according to KPSS test , the IMM log price data is stationary .
+ 
+ 
+# finding the values of AR terms and MA terms or p,q
+```{r}
+
+arma.iom <- auto.arima(log.iom)
+summary(arma.iom)
+```
+
+Based on the best model results from the auto.arima summary , we will be going with AR/p = 0 and MA/q =1
+```{r}
+garch.iom <- garchFit(~arma(0,1) + garch(1,1), data=ts(log.iom, frequency = 12), cond.dist = "std", trace=F)
+summary(garch.iom)
+```
+
+
+## ACF for residuals from IOM GARCH 
+```{r}
+
+acf(garch.iom@residuals,48, main='')
+```
+
+```{r}
+
+checkresiduals(garch.iom@residuals,48, main='')
+```
+
+
+There is very less heteroscedasticity in the residuals using GARCH compared to previous models and the residuals look very similar to white noise.
+
+## Predictions from GARCH for IOM seat price 
+```{r}
+predict(garch.iom, 12, plot = T)[0]
+```
+
+
+
+```{r}
+McLeod.Li.test(y=residuals(garch.iom))
+```
+
+
+####  Task B:
+
+### Since you already have the seat prices for the 2013, evaluate each algorithm from Task A using sMAPE. Which one do you recommend to forecast monthly prices for each of the seat classes?
+
+
+```{r}
+SMAPE <- function(actual.val, pred.val) {
+  temp <- abs(actual.val - pred.val) / ((abs(actual.val) + abs(pred.val))/2)
+  return(sum(temp, na.rm = T) * 100/length(actual.val))
+}
+forecast_seat_prices_2013 <- function(k,Division ,col, model) {
+  SMAPE <- SMAPE(k$price, k[,col])
+  k %>% melt(id.vars='Date', measure.vars = c('price', col)) %>% ggplot(aes(x=Date, y=value, color=variable)) + 
+    geom_line() + scale_x_yearmon() + labs(title=paste(model, 'Forecast for 2013', Division, 'Seat Price'),
+    subtitle=paste0('SMAPE: ', round(SMAPE, 1), '%'))
+}
+```
+
+### Linear Regression evaluation for CME seat 2013 prices
+```{r}
+cme_test$lm_forecast <- predict(lm.cme, newdata=cme_test)
+forecast_seat_prices_2013(cme_test,'CME', 'lm_forecast',  'Linear Regression')
+```
+
+### SMAPE of linear regression for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$lm_forecast)
+```
+
+
+
+### Linear Regression evaluation for IMM seat 2013 prices
+
+## IMM
+```{r}
+imm_test$lm_forecast <- predict(lm.imm, newdata=imm_test)
+forecast_seat_prices_2013(imm_test,'IMM', 'lm_forecast',  'Linear Regression')
+```
+
+### SMAPE of linear regression for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$lm_forecast)
+```
+
+
+
+
+### Linear Regression evaluation for IOM seat 2013 prices
+
+## IOM
+```{r}
+iom_test$lm_forecast <- predict(lm.iom, newdata=iom_test)
+forecast_seat_prices_2013(iom_test,'IOM', 'lm_forecast',  'Linear Regression')
+```
+
+### SMAPE of linear regression for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$lm_forecast)
+```
+
+```{r}
+dataframe.smape <- data.frame(row.names = c('CME', 'IMM', 'IOM'),Linear_Regression = c(with(cme_test, SMAPE(price, lm_forecast)),with(imm_test, SMAPE(price, lm_forecast)),with(iom_test, SMAPE(price, lm_forecast))))
+dataframe.smape
+```
+
+
+### Evaluation of Regression with ARIMA Errors
+
+## CME
+
+## Linear Regression with ARMA errors evaluation for CME seat 2013 prices
+```{r}
+cme_test$lm_arma_err_forecast <- predict(lm.arima.cme, newxreg=cme_test$total.volume)$pred
+forecast_seat_prices_2013(cme_test,'CME', 'lm_arma_err_forecast',  'Regression with ARMA Errors')
+```
+
+### SMAPE of linear regression with ARMA errors for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$lm_arma_err_forecast)
+```
+
+
+
+
+## IMM
+
+## Linear Regression with ARMA errors evaluation for IMM seat 2013 prices
+```{r}
+imm_test$lm_arma_err_forecast <- predict(lm.arima.imm, newxreg=imm_test$total.volume)$pred
+forecast_seat_prices_2013(imm_test,'IMM', 'lm_arma_err_forecast',  'Regression with ARMA Errors')
+```
+
+### SMAPE of linear regression with ARMA errors for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$lm_arma_err_forecast)
+```
+
+
+
+## IOM
+
+## Linear Regression with ARMA errors evaluation for IMM seat 2013 prices
+```{r}
+iom_test$lm_arma_err_forecast <- predict(lm.arima.iom, newxreg=iom_test$floor.volume)$pred
+forecast_seat_prices_2013(iom_test,'IOM', 'lm_arma_err_forecast',  'Regression with ARMA Errors')
+```
+
+### SMAPE of linear regression with ARMA errors for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$lm_arma_err_forecast)
+```
+
+
+
+
+```{r}
+dataframe.smape$LM.ARMA.ERRs <- c(with(cme_test, SMAPE(price, lm_arma_err_forecast)),with(imm_test, SMAPE(price, lm_arma_err_forecast)),with(iom_test, SMAPE(price, lm_arma_err_forecast)))
+dataframe.smape
+```
+
+
+### Holt-winters evaluation 
+
+## Holt-winters evaluation for CME seat 2013 prices
+
+## CME
+```{r}
+cme_test$hw_forecast <- forecast(holtwinters.cme, h = 12)$mean
+forecast_seat_prices_2013(cme_test,'CME', 'hw_forecast',  'Holt-Winters')
+```
+
+### SMAPE of Holt winters for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$hw_forecast)
+```
+
+
+
+## IMM
+```{r}
+imm_test$hw_forecast <- forecast(holtwinters.imm, h = 12)$mean
+forecast_seat_prices_2013(imm_test,'IMM', 'hw_forecast',  'Holt-Winters')
+```
+
+### SMAPE of Holt winters for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$hw_forecast)
+```
+
+
+## IOM
+```{r}
+iom_test$hw_forecast <- forecast(holtwinters.iom, h = 12)$mean
+forecast_seat_prices_2013(iom_test,'IOM', 'hw_forecast',  'Holt-Winters')
+```
+
+### SMAPE of Holt winters for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$hw_forecast)
+```
+
+
+
+```{r}
+dataframe.smape$Holt.Winters <- c(with(cme_test, SMAPE(price, hw_forecast)),with(imm_test, SMAPE(price, hw_forecast)),with(iom_test, SMAPE(price, hw_forecast)))
+dataframe.smape
+```
+
+
+### ARIMA evaluation
+
+
+## ARIMA evaluation for CME seat 2013 prices
+
+## CME
+```{r}
+cme_test$arima_forecast <- forecast(arima.cme, h = 12)$mean
+forecast_seat_prices_2013(cme_test,'CME', 'arima_forecast',  'ARIMA(2,1,0)')
+```
+
+### SMAPE of ARIMA for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$arima_forecast)
+```
+
+
+
+## ARIMA evaluation for IMM seat 2013 prices
+
+## IMM
+```{r}
+imm_test$arima_forecast <- forecast(arima.imm, h = 12)$mean
+forecast_seat_prices_2013(imm_test,'IMM', 'arima_forecast',  'ARIMA(0,1,1)')
+```
+
+### SMAPE of ARIMA for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$arima_forecast)
+```
+
+## ARIMA evaluation for IOM seat 2013 prices
+
+## IOM
+```{r}
+iom_test$arima_forecast <- forecast(arima.iom, h = 12)$mean
+forecast_seat_prices_2013(iom_test,'IOM', 'arima_forecast',  'ARIMA(2,1,3)')
+```
+
+### SMAPE of ARIMA for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$arima_forecast)
+```
+
+
+```{r}
+dataframe.smape$ARIMA <- c(with(cme_test, SMAPE(price, arima_forecast)),with(imm_test, SMAPE(price, arima_forecast)),with(iom_test, SMAPE(price, arima_forecast)))
+dataframe.smape
+```
+
+
+
+### Seasonal ARIMA evaluation
+
+
+## Seasonal ARIMA evaluation for CME seat 2013 prices
+
+## CME
+```{r}
+cme_test$sarima_forecast <- forecast(sarima.cme, h = 12)$mean
+forecast_seat_prices_2013(cme_test,'CME', 'sarima_forecast',  'ARIMA(2,1,0)')
+```
+
+### SMAPE of Seasonal ARIMA for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$sarima_forecast)
+```
+
+
+
+## IMM
+```{r}
+imm_test$sarima_forecast <- forecast(sarima.imm, h = 12)$mean
+forecast_seat_prices_2013(imm_test,'IMM', 'sarima_forecast',  'ARIMA(0,1,1)')
+```
+
+### SMAPE of Seasonal ARIMA for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$sarima_forecast)
+```
+
+
+
+## IOM
+```{r}
+iom_test$sarima_forecast <- forecast(sarima.iom, h = 12)$mean
+forecast_seat_prices_2013(iom_test,'IOM', 'sarima_forecast',  'ARIMA(2,1,3)')
+```
+
+### SMAPE of Seasonal ARIMA for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$sarima_forecast)
+```
+
+
+```{r}
+dataframe.smape$SARIMA <- c(with(cme_test, SMAPE(price, sarima_forecast)),with(imm_test, SMAPE(price, sarima_forecast)),with(iom_test, SMAPE(price, sarima_forecast)))
+dataframe.smape
+```
+
+
+### Fractional ARIMA evaluation
+
+## Fractional ARIMA evaluation for CME seat 2013 prices
+
+## CME
+```{r}
+cme_test$arfima_forecast <- forecast(arfima.cme, h = 12)$mean
+forecast_seat_prices_2013(cme_test,'CME', 'arfima_forecast',  'ARFIMA')
+```
+
+### SMAPE of Fractional ARIMA for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$arfima_forecast)
+```
+
+
+## Fractional ARIMA evaluation for IMM seat 2013 prices
+
+## IOM
+```{r}
+imm_test$arfima_forecast <- forecast(arfima.imm, h = 12)$mean
+forecast_seat_prices_2013(imm_test,'IMM', 'arfima_forecast',  'ARFIMA')
+```
+
+### SMAPE of Fractional ARIMA for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$arfima_forecast)
+```
+
+
+## Fractional ARIMA evaluation for IOM seat 2013 prices
+
+## IOM
+```{r}
+iom_test$arfima_forecast <- forecast(arfima.iom, h = 12)$mean
+forecast_seat_prices_2013(iom_test,'IOM', 'arfima_forecast',  'ARFIMA')
+```
+
+### SMAPE of Fractional ARIMA for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$arfima_forecast)
+```
+
+
+
+```{r}
+dataframe.smape$ARFIMA <- c(with(cme_test, SMAPE(price, arfima_forecast)),with(imm_test, SMAPE(price, arfima_forecast)),with(iom_test, SMAPE(price, arfima_forecast)))
+dataframe.smape
+```
+
+
+### GARCH evaluation
+
+
+## GARCH evaluation for CME seat 2013 prices
+
+We are going to multiply  the CME garch forecast by 100000000 because the training data that we used to fit the garch model garch.cme was log transformed and 1st differenced to make it stationary .
+
+## CME
+```{r}
+cme_test$garch_forecast <- predict(garch.cme, 12)$meanForecast *100000000
+forecast_seat_prices_2013(cme_test,'CME', 'garch_forecast',  'GARCH')
+```
+
+### SMAPE of GARCH for CME seat prices 2013 forecast
+```{r}
+SMAPE(cme_test$price,cme_test$garch_forecast)
+```
+
+
+## GARCH evaluation for IMM seat 2013 prices
+
+We are going to multiply  the IMM garch forecast by 10000000 because the training data that we used to fit the garch model garch.imm was log transformed and 1st differenced to make it stationary .
+
+## IMM
+```{r}
+imm_test$garch_forecast <- abs(predict(garch.imm, 12)$meanForecast*10000000)
+forecast_seat_prices_2013(imm_test,'IMM', 'garch_forecast',  'GARCH')
+```
+
+### SMAPE of GARCH for IMM seat prices 2013 forecast
+```{r}
+SMAPE(imm_test$price,imm_test$garch_forecast)
+```
+
+
+
+
+
+## GARCH evaluation for IOM seat 2013 prices
+
+We are going to multiply  the IOM garch forecast by 10000000 because the training data that we used to fit the garch model garch.iom was log transformed and 1st differenced to make it stationary .
+
+## IOM
+```{r}
+iom_test$garch_forecast <- abs(predict(garch.iom, 12)$meanForecast*10000000)
+forecast_seat_prices_2013(iom_test,'IOM', 'garch_forecast',  'GARCH')
+```
+
+### SMAPE of GARCH for IOM seat prices 2013 forecast
+```{r}
+SMAPE(iom_test$price,iom_test$garch_forecast)
+```
+
+
+
+
+
+
+
+```{r}
+dataframe.smape$GARCH <- c(with(cme_test, SMAPE(price, garch_forecast)),with(imm_test, SMAPE(price, garch_forecast)),with(iom_test, SMAPE(price, garch_forecast)))
+dataframe.smape
+```
+
+
+
+```{r}
+dataframe.smape <- t(dataframe.smape)
+dataframe.smape
+```
+
+
+Best model for CME: ARFIMA
+Best model for IMM: Holt winters
+Best model for IOM: ARIMA and Seasonal ARIMA
+
+The above models had favourable esidual diagnostics compared to the other models.
+
+SMAPE indicates the correctness of the forecast . Hence we declare ARFIMA, Holt winters and ARIMA.SARIMA as the recommended models for CME, IMM and IOM seat prices time series forecasting based on volume .

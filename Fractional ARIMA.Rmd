@@ -1,0 +1,637 @@
+---
+title: "Assignment 5"
+author: "Aamer hussain"
+date: "2/13/2021"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+setwd("/Users/mohammedhussain/Desktop/UCHICAGO assigments/Time series/Assignment 5")
+```
+
+```{r}
+install.packages("pscl", repos = "https://cran.rstudio.com")
+```
+
+
+## Installing the packages 
+```{r}
+install.packages('plyr', repos = "http://cran.us.r-project.org")
+install.packages('tseries', repos = "http://cran.us.r-project.org")
+install.packages('forecast', repos = "http://cran.us.r-project.org")
+install.packages('fpp', repos = "http://cran.us.r-project.org")
+install.packages('TSA', repos = "http://cran.us.r-project.org")
+install.packages('here', repos = "http://cran.us.r-project.org")
+install.packages('tsibble', repos = "http://cran.us.r-project.org")
+```
+
+```{r}
+install.packages('fracdiff', repos = "http://cran.us.r-project.org")
+```
+
+```{r}
+install.packages('arfima', repos = "http://cran.us.r-project.org")
+```
+## Loading the libraries
+```{r}
+library(dplyr)
+library(ggplot2)
+library('tseries')
+library(openxlsx)
+library(reshape2)
+library(gdata)
+library(stringr)
+library(xts)
+library(forecast)
+library(zoo)
+library(janitor)
+library(lubridate)
+library(fpp)
+#library(TSA)
+#library(here)
+library(tidyverse)
+#library(ggthemes)
+library(tsibble)
+library(rlang)
+library(broom)
+library(readxl)
+library(fracdiff)
+library(arfima)
+library(lmtest)
+library("forecast", lib.loc="~/R/win-library/3.3")
+```
+
+
+```{r}
+df <- read.csv("Gas Furnace Dataset.csv")
+```
+
+
+```{r}
+head(df)
+```
+
+
+
+```{r}
+nrow(df)
+```
+
+# Simplying the column names of the dataframe
+```{r}
+names(df) <- c('input', 'output')
+```
+
+# plotting the regression line for the Gas furnace data
+```{r}
+ggplot(df, aes(x=input, y=output)) + geom_point() + geom_smooth(method='lm') + ggtitle('Gas Furnace Data')
+```
+
+
+# Plotting the data
+```{r}
+par(mfrow=c(2,1))
+plot(df[,1], type = "l", main = "Input.gas.rate")
+plot(df[,2], type = "l", main = "Outlet.gas.CO2.percentage")
+```
+
+The data definitely shows some kind of seasonality according to the plot of Input.gas.rate and Outlet.gas.CO2.percentage. But we are more focused on the residuals of a linear model for the course of this assignment. So lets go ahead and create a linear model.
+
+### 1. Use linear regression model - plot the ACF - what can you conclude ?
+
+
+```{r}
+linear.model <- lm(output ~ input, data=df)
+```
+
+
+
+```{r}
+summary(linear.model)
+```
+
+```{r}
+plot(linear.model$residuals,ylab = "residuals", type='l', main='Residuals of Linear Model')
+```
+
+ We can also observe some  seasonality in the residuals of the linear model ooking at the  ACF plot of residuals.
+
+## ACF plot for the residuals
+```{r}
+acf(linear.model$residuals)
+```
+
+There is some level of significant autocorrelation in the residuals of our linear model at low lags. Looking at the ACF plots, we find that some spikes are significant till lag 5 and from lag 10-15, these spikes become significant again temporarily .
+
+
+
+
+
+```{r}
+tsdisplay(linear.model$residuals)
+```
+We can also see a few significant spikes in the PACF plot of the residuals . The spikes in the PACF plot die out after a few lags.
+
+
+The residuals are not independent of each other(correlation)
+
+In my opinion, the linear model is not a good option to model the  behavior of the residuals and moreover even the r-squared value is only 0.23 which is not a good indication.
+
+
+The very basic assumption in our linear model about non-correlation within the residuals is violated because as we can clearly see from the ACF and PACF plots of residuals that they are clearly autocorrelated. 
+
+As a part of Cochrane-Orcutt process:We can fit an ARMA model to the residuals of the linear model, then adjust the variables of the linear models by using the coefficients of the ARMA model refit and iterate until it converges.
+
+
+
+### 2. Use ARIMA (0,0,1) model for the residuals. Adjust the Input gas rate and Output CO2 % with the MA coefficient. Combine with the linear regression model. Plot the residuals.
+
+```{r}
+arima001 <- Arima(linear.model$residuals, order = c(0,0,1), include.mean=FALSE)
+summary(arima001)
+```
+
+We can now adjust the input gas rate and Output CO2 % with the MA coefficient obtained from the ARIMA (0,0,1) model
+
+The Cochrane-Orcutt process using the arma.innovation function includes the following the steps:
+
+ 1. Build a naive linear model
+  2. Model the residuals using AR/MA(p)
+  3. Adjust x & y using AR/MA coefficient by x'(t) = x(t) - b*x(t-1)
+  4. Run new linear model with x' and y'
+  5. Using new esimates and slope and intercept to adjust previous model by
+  new_slope = adjusted_slope and new_intercept = adjusted_intercept / (1-sum(AR_coef))
+  6. Repeat 2-5 until coefficients converge
+  
+ 
+
+
+
+Here we use the  `arma.innovation` function by Danny
+```{r}
+arma.innovation <- function(x, arma.model, ar.truncation=10) {
+  p <- arma.model$arma[1]
+  q <- arma.model$arma[2]
+  ar.coef <- arma.model$coef[seq_len(p)]
+  ma.coef <- arma.model$coef[p + seq_len(q)]
+  if (q == 0) {
+    infinite.ar.coef <- ar.coef
+  } else {
+    infinite.ar.coef <- -ARMAtoMA(-ma.coef, -ar.coef, ar.truncation)
+  }
+  return(as.vector(stats::filter(x, c(1, -infinite.ar.coef), side=1)))
+}
+```
+
+
+
+```{r}
+df$input_arima001  <- arma.innovation(df$input, arima001)
+df$output_arima001 <- arma.innovation(df$output, arima001)
+head(df,20)
+```
+
+Combine with the linear regression model.
+```{r}
+linear_arima001<- lm(output_arima001 ~ input_arima001, data=df)
+summary(linear_arima001)
+```
+
+
+Now lets plot the residuals of this new model.
+```{r}
+acf(linear_arima001$residuals)
+
+```
+
+
+```{r}
+plot(linear_arima001$residuals, type='l')
+```
+
+
+```{r}
+tsdisplay(linear_arima001$residuals)
+```
+
+This new model that we obtained after adjusting the variables of our initial linear model with the MA coefficent does not show any kind of significant improvement compared to the initial linear model. 
+
+There are seasonal variations in the time series plot of residuals of this new model linear_arima001. t
+
+There are also a few significant spikes observed in the ACF and PACF plots indicating that the residuals are still autocorrelated even after adjusting oiur data with the MA coefficients. 
+
+The R-squared of this new model is arund 0.3 which which is slightly than the previous model that had an R-squared value of 0.23.
+
+
+### 3. Use ARIMA (1,0,0) model for the residuals. Adjust the Input gas rate and Output CO2 % with the AR coefficient. Combine with the linear regression model. Plot the residuals.
+
+```{r}
+arima100 <- Arima(linear.model$residuals, order = c(1,0,0), include.mean=FALSE)
+summary(arima100)
+```
+
+```{r}
+df$input_arima100  <- arma.innovation(df$input, arima100)
+df$output_arima100 <- arma.innovation(df$output, arima100)
+head(df,25)
+```
+
+
+```{r}
+linear_arima100 <- lm(output_arima100 ~ input_arima100, data=df)
+summary(linear_arima100)
+```
+
+
+```{r}
+acf(linear_arima100$residuals)
+```
+
+
+```{r}
+plot(linear_arima100$residuals, type='l')
+```
+
+
+```{r}
+tsdisplay(linear_arima100$residuals)
+```
+
+This new model that we obtained after adjusting the variables of our initial linear model with the AR coefficent does not show any kind of significant improvement compared to the initial linear model. In fact ,The R-squared of this new model is around 0.07 which which is worse than the initial model that had an R-squared value of 0.23 and also the previous model which had an R-squared value of 0.3
+
+There are seasonal variations in the time series plot of residuals of this new model linear_arima100.
+
+There are also a few significant spikes observed in the ACF and PACF plots indicating that the residuals are still autocorrelated even after adjusting our data with the AR coefficients. 
+
+
+
+ 
+### 4.Use ARIMA (0,0,2) model for the residuals. Adjust the Input gas rate and Output CO2 % with the MA coefficient. Combine with the linear regression model. Plot the residuals.
+
+
+```{r}
+arima002 <- Arima(linear.model$residuals, order = c(0,0,2),include.mean = FALSE)
+summary(arima002)
+```
+
+
+
+```{r}
+df$input_arima002  <- arma.innovation(df$input, arima002)
+df$output_arima002 <- arma.innovation(df$output, arima002)
+```
+
+
+```{r}
+linear_arima002 <- lm(output_arima002 ~ input_arima002, data=df)
+summary(linear_arima002)
+```
+
+
+```{r}
+acf(linear_arima002$residuals)
+```
+
+
+
+```{r}
+plot(linear_arima002$residuals, type='l')
+```
+
+
+```{r}
+tsdisplay(linear_arima002$residuals)
+```
+
+
+This new model that we obtained after adjusting the variables of our initial linear model with the MA coefficents does not show any kind of significant improvement compared to the initial linear model. In fact ,The R-squared of this new model is around 0.19 which which is worse than the initial linear model that had an R-squared value of 0.23.
+
+There are seasonal variations in the time series plot of residuals of this new model linear_arima002.
+
+There are also many significant spikes compared to all the previous model that have been observed in the ACF and PACF plots indicating that the residuals are still autocorrelated even after adjusting our data with the MA coefficients(0,0,2)
+
+### 5.Use ARIMA (2,0,0) model for the residuals. Adjust the Input gas rate and Output CO2 % with the AR coefficient. Combine with the linear regression model. Plot the residuals.
+
+
+```{r}
+arima200 <- Arima(linear.model$residuals, order = c(2,0,0),include.mean = FALSE)
+summary(arima200)
+```
+
+
+```{r}
+df$input_arima200  <- arma.innovation(df$input, arima200)
+df$output_arima200 <- arma.innovation(df$output, arima200)
+head(df,30)
+```
+
+```{r}
+linear_arima200 <- lm(output_arima200 ~ input_arima200, data=df)
+summary(linear_arima200)
+```
+
+
+```{r}
+acf(linear_arima200$residuals)
+
+```
+
+
+```{r}
+plot(linear_arima200$residuals, type='l')
+```
+
+
+```{r}
+tsdisplay(linear_arima200$residuals)
+```
+
+
+This new model that we obtained after adjusting the variables of our initial linear model with the AR coefficents does not show any kind of significant improvement compared to any of our previous models. 
+In fact ,The R-squared of this new model is around 0.02 which which is worse than all of our previous models.
+
+There are seasonal variations in the time series plot of residuals of this new model linear_arima200.
+
+There are also many significant spikes compared to all the previous model that have been observed in the ACF and PACF plots indicating that the residuals are much more autocorrelated tha earlier even after adjusting our data with the AR coefficients(2,0,0)
+
+The residuals are not even close to the white noise.
+
+### 6.Use ARIMA (2,0,2) model for the residuals. Adjust the Input gas rate and Output CO2 % with the AR and MA coefficients. Combine with the linear regression model. Plot the residuals.
+
+Neither the pure autoregressive(adjusting with AR coefficients) nor pure moving average(adjusting with MA coefficients) did the trick in terms of removing the autocorrelation within the residuals, we can try a combination of the two.
+
+
+
+```{r}
+arima202 <- Arima(linear.model$residuals, order = c(2,0,2), include.mean = FALSE)
+summary(arima202)
+```
+
+
+```{r}
+df$input_arima202  <- arma.innovation(df$input, arima202)
+df$output_arima202 <- arma.innovation(df$output, arima202)
+head(df,25)
+```
+
+
+```{r}
+linear_arima202 <- lm(output_arima202 ~ input_arima202, data=df)
+summary(linear_arima202)
+```
+
+
+```{r}
+acf(linear_arima202$residuals)
+```
+
+
+
+```{r}
+plot(linear_arima202$residuals, type='l')
+```
+
+```{r}
+tsdisplay(linear_arima202$residuals)
+```
+
+This new model that we obtained after adjusting the variables of our initial linear model with both the AR adn MA  coefficents does not show any kind of significant improvement compared to any of our previous models. 
+In fact ,The R-squared of this new model is around 0.02 which which is worse than all of our previous models.
+
+There are seasonal variations in the time series plot of residuals of this new model linear_arima202.
+
+However there are less significant spikes compared to all the previous model that have been observed in the ACF and PACF plots indicating that the residuals are less autocorrelated tha earlier even after adjusting our data with  both the AR and MA coefficients(2,0,2)
+
+The residuals are now getting little closer to the white noise as significant spikes are fewer in larger lags.
+
+
+### 7. Use fractional ARIMA model (aka ARFIMA) for the output gas CO2% - plot the residuals, acf and pacf plots of the model. You can use an R package like fracdiff – be careful to determine which lag to choose when executing this test.
+
+We will perform fractional ARIMA or ARFIMA using 2 separate libraries.: fracdiff amd arfima 
+
+
+## Fracdiff package
+```{r}
+frac.diff <- fracdiff::fracdiff(x= df$output) #get the fractional difference
+summary(frac.diff)
+```
+
+
+
+```{r}
+fracdiff.output <- fracdiff::diffseries(df$output, frac.diff$d) #apply the fractional difference
+```
+
+
+```{r}
+auto.arima(fracdiff.output)
+```
+
+Based on this result ,we select (2,0,4) as our ARFIMA model.
+
+```{r}
+model.fracdiff <- Arima(fracdiff.output,  xreg=df$input,order = c(2,0,4), include.mean = FALSE)
+summary(model.fracdiff)
+```
+
+```{r}
+acf(model.fracdiff$residuals)
+```
+
+
+```{r}
+pacf(model.fracdiff$residuals)
+```
+
+```{r}
+tsdisplay(model.fracdiff$residuals)
+```
+
+now it looks like a white noise with no seasonality or trend or correlation.
+
+
+
+
+## arfima package
+```{r}
+model.arfima <- arfima(z=df$output, order=c(2,0,2),
+                       xreg=data.frame(xreg=df$input))
+summary(model.arfima)
+```
+
+
+```{r}
+plot(residuals(model.arfima)[[1]], type='l')
+```
+
+Looks like a perfect white noise.
+
+```{r}
+acf(residuals(model.arfima)[[1]])
+```
+
+```{r}
+pacf(residuals(model.arfima)[[1]])
+```
+
+```{r}
+AIC(model.fracdiff,model.arfima)
+```
+
+Clearly model.arfima using the arfima package seems to be better in terms of the AIC values compared to the model.fracdiff model using the fracdiff package.
+
+
+We will be using the arfima model from the arfima package for further tests and analysis.
+
+
+### 8.Perform  Summaries,  Durbin-Watson and Box-Ljung tests for each model and build table to compare AICs, BICs and p-vaules for each test across the ARIMA and ARFIMA models.
+
+```{r}
+models <- list(linear_arima001,linear_arima100,linear_arima002,linear_arima200,linear_arima202)
+```
+
+
+```{r}
+durbin.watson <- c()
+box.ljung <- c()
+```
+
+
+```{r}
+for (i in models){
+  durbin.watson <- c(durbin.watson,as.numeric(dwtest(i, alternative ='two.sided')['p.value']))
+  box.ljung <- c(box.ljung,as.numeric(Box.test(resid(i), lag = 10, type = "Ljung-Box")['p.value']))
+}
+```
+
+
+
+```{r}
+durbin.watson <- c(durbin.watson,as.numeric(dwtest(lm(residuals(model.arfima)[[1]]~1), alternative ='two.sided')['p.value']))
+durbin.watson <- round(durbin.watson,4)
+box.ljung <- c(box.ljung,as.numeric(Box.test(residuals(model.arfima)[[1]], lag = 10, type = "Ljung-Box")['p.value']))
+```
+
+
+```{r}
+AIC.vals <- c()
+BIC.vals <- c()
+```
+
+
+
+```{r}
+arima.models <- list(arima001,arima100,arima002,arima200,arima202,model.arfima)
+```
+
+
+
+```{r}
+for (i in arima.models){
+  AIC.vals <- c(AIC.vals, AIC(i))
+  BIC.vals <- c(BIC.vals, i['bic'])
+}
+
+```
+
+
+```{r}
+BIC.vals
+```
+
+```{r}
+BIC.vals[[6]] <- AIC(model.arfima, k=log(model.arfima$n))
+```
+
+
+```{r}
+compare.results <- cbind(as.numeric(durbin.watson),as.numeric(box.ljung),as.numeric(AIC.vals),as.numeric(BIC.vals))
+compare.results 
+```
+
+```{r}
+compare.results <- data.frame(compare.results)
+compare.results
+```
+
+
+```{r}
+colnames(compare.results) <- c("Durbin Watson.p-value", "Ljung-Box.p-value","AIC.values","BIC.values")
+rownames(compare.results) <- c("arima001","arima100","arima002","arima200","arima202","ARFIMA")
+compare.results
+```
+
+
+ARFIMA model has the best values among all the models.
+
+### 9.Based on ACF plots and test results, which ARIMA model gives the best result in terms of residuals being close to white noise ?
+
+From the ACF , PACF , TS plots , R-squared from the summaries , AIC , BIC , Durbin watson tests and Lyung box tests, I think the fractional arima has outperformed all other models in terms of modelling the behavior of the residuals of the linear model and removing the autocorrelation from them and at the same time making them similar to white noise.
+
+The residuals from the arfima model were closest to white noise. The p-values from the Durbin Watson and Ljung-Box test's null hypotheses (data is independently distributed and also no autocorrelation) performed from the arfima model residuals resulted in the conclusion that the residuals were not correlated . The ACF plots and PACF plots indicated the same. Besides that, ARFIMA  model had  lowest AIC and BIC values.
+
+
+The ARFIMA model had a significant spike in the ACF plot only at lag 1 and tehe subsequent Spikes in larger lag were with in the bound which was a good sign. The volativility in residuals time series plot is much
+less than that in all previous models. There is still some level of autocorrelation and seasonality left over in the residuals of the ARFIMA model . But ARFIMA had a better performance on so many fronts and was similar to white noise.
+
+### 10.Bootstrap - bootstrap residual.ols with n=500 (use the bld.mbb.bootstrap() API). Use the bootstrap samples to estimate 500 ARIMA(1,0,1) models using the Arima() API. Use the 500 estimates for AR and 500 estimates for MA coefficients . plot the coefficient distributions (one for AR and one for MA) - what type of distribution are they close to? Why? calculate the 95% confidence interval for the coefficient
+
+
+```{r}
+bootst<-bld.mbb.bootstrap(linear.model$residuals, n=500)
+```
+
+
+
+
+```{r}
+AR_coefficients <- c()
+MA_coefficients <- c()
+for (i in 1:500){
+  AR_coefficients <- c(AR_coefficients, coef(Arima(bootst[[i]], order = c(1,0,1)))['ar1'])
+  MA_coefficients <- c(MA_coefficients, coef(Arima(bootst[[i]], order = c(1,0,1)))['ma1'])
+}
+```
+
+
+
+
+```{r}
+hist(MA_coefficients)
+```
+
+The Auto-regressive coefficients have a distribution that is close to a normal distribution
+
+```{r}
+hist(AR_coefficients)
+```
+
+The moving average coefficients have a distrbution that is similar to a normal distribution too.
+
+```{r}
+hist(linear.model$residuals)
+```
+
+
+The residuals of our initial linear model also has a normal distribution . The bootstrapping mechanism works by sampling the residuals from the original distribution with replacement and then performing ARIMA(1,0,1) 500 times . This origianl distribution of the residuals of the linear model had a normal distribution , so bootstrapping the same distribution multiple times will lead to a normal distribution too among the coefficients of the ARIMA like AR or MA . Hence both of them have a normal distribution.
+
+
+## 95% confidence interval for the AR coefficient
+```{r}
+quantile(AR_coefficients,c(.025,.975),na.rm=T)
+```
+
+The confidence interval for the AR coefficients is [0.9120861,0.9249016]
+
+## 95% confidence interval for the MA coefficient
+```{r}
+quantile(MA_coefficients,c(.025,.975),na.rm=T)
+```
+
+The confidence interval for the AR coefficients is [0.5985837,0.7366824]
+
+

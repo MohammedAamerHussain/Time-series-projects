@@ -1,0 +1,505 @@
+---
+title: "Assignment 2"
+author: "Aamer hussain"
+date: "1/25/2021"
+output: html_document
+---
+
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("/Users/mohammedhussain/Desktop/UCHICAGO assigments/Time series/Assignment 2")
+```
+
+```{r}
+install.packages("pscl", repos = "https://cran.rstudio.com")
+```
+
+
+## Installing the packages 
+```{r}
+install.packages('plyr', repos = "http://cran.us.r-project.org")
+install.packages('tseries', repos = "http://cran.us.r-project.org")
+install.packages('DataCombine', repos = "http://cran.us.r-project.org")
+```
+
+
+## Loading the libraries
+```{r}
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library('tseries')
+library(zoo)
+library(xts)
+library("DataCombine")
+```
+
+### Reading the data
+
+```{r}
+df = read.csv("TS regression - data_akbilgic.csv")
+```
+
+Data description - all are daily stock exchange returns
+
+ 
+
+ISE: Istanbul stock exchange national 100 index
+
+SP: Standard & Poor™s 500 return index
+
+DAX: Stock market return index of Germany
+
+FTSE: Stock market return index of UK
+
+NIKKEI: Stock market return index of Japan
+
+BOVESPA: Stock market return index of Brazil
+
+
+
+```{r}
+head(df)
+```
+
+
+```{r}
+df$date <- as.Date(as.character(df$date), format='%d-%b-%y')
+```
+
+```{r}
+str(df)
+```
+
+
+
+```{r}
+nrow(df)
+nrows <- length(df[,1])
+```
+
+Questions :
+
+
+1. Determine if all the TS are stationary 
+
+
+ a) Qualitatively :
+```{r}
+par(mfrow=c(1,2))
+plot.ts(df[,2],main="ISE Time Series Plot")
+acf(df[,2],nrows,main="ACF Plot")
+```
+
+Istanbul stock exchange(ISE) is stationary because the mean and autocovariance are constant over time
+
+```{r}
+ISE  <- xts(df$ISE, df$date)
+```
+
+```{r}
+plot(ISE)
+```
+
+ISE looks stable centered around the mean which is constant and not changing  with no upward or downward trend. Hence stationary .
+
+```{r}
+SP   <- xts(df$SP,  df$date)
+```
+
+```{r}
+plot(SP)
+```
+
+S&P returns index looks stable centered around the mean which is constant and not changing  with no upward or downward trend. Hence stationary .
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(df[,3],main="S & P 500 return index data 
+        Time-Series Plot")
+acf(df[,3],nrows,main="ACF Plot")
+```
+
+S&P 500 return index data is stationary because the mean and autocovariance are constant over time.
+
+
+```{r}
+DAX  <- xts(df$DAX, df$date)
+plot(DAX)
+```
+
+
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(df[,4],main="DAX Time-Series Plot")
+acf(df[,4],nrows,main="ACF Plot")
+```
+
+DAX is stationary because the mean and autocovariance are constant over time.
+
+
+```{r}
+FTSE <- xts(df$FTSE, df$date)
+ts.plot(FTSE)
+```
+
+FTSE is stationary because the mean and autocovariance are constant over time
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(df[,5],main="FTSE Time-Series Plot")
+acf(df[,5],nrows,main="ACF Plot")
+```
+
+
+FTSE looks stable centered around the mean which is constant and not changing  with no upward or downward trend. Hence stationary .
+
+
+
+```{r}
+NIKKEI <- xts(df$NIKKEI, df$date)
+plot(NIKKEI)
+```
+
+
+NIKKEI is stationary because the mean and autocovariance are constant over time
+
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(df[,6],main="NIKKEI Time-Series Plot")
+acf(df[,6],nrows,main="ACF Plot")
+```
+NIKKEI looks stable centered around the mean which is constant and not changing  with no upward or downward trend. Hence stationary .
+
+
+```{r}
+BOVESPA <- xts(df$BOVESPA, df$date)
+plot(BOVESPA)
+```
+
+BOVESPA looks stable centered around the mean which is constant and not changing  with no upward or downward trend. Hence stationary .
+
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(df[,7],main="BOVESPA Time-Series Plot")
+acf(df[,7],nrows,main="ACF Plot")
+```
+
+BOVESPA is stationary because the mean and autocovariance are constant over time
+
+
+
+### 1. b) quantitatively - use ADF and KPSS from package tseries
+
+We have 2 two statistical tests at our disposal to determine if a time series is stationary or not. one of the test is called augmented dickey fuller(ADF) test and the other one is called KPSS test. 
+
+The null hypothesis of ADF test states that the time series has uniroot and that the TS is stationary . Where as the KPSS test tests against the alternative hypothesis that the TS has uni root . 
+
+If any time series has a uni root , it indicates that it has a stochastic trend which is unpredictable 
+
+A low p value( less than 0.05) in ADF test implies that the null hypothesis( that TS is non- stationary) is rejected and alternate hypothsis is accepted which is that the TS is stationary .
+
+A high p value( greater than 0.05) in KPSS test implies that the null hypothesis( that TS is stationary) is not rejected which would imply that the time series is stationary .
+
+## Statistical tests for ISE
+```{r}
+adf.test(df[,2]) #p-value = 0.01, reject Ho:non-stationary TS
+```
+
+
+```{r}
+kpss.test(df[,2]) #p-value = 0.1, do not reject Ho:stationary TS
+```
+
+Based on the results from the ADF test and KPSS test , we can conclude that the ISE is stationary 
+
+
+## Statistical tests for SP
+```{r}
+adf.test(df[,3]) #p-value = 0.01, reject Ho:non-stationary TS
+
+```
+
+
+
+```{r}
+kpss.test(df[,3]) #p-value = 0.1, do not reject Ho:stationary TS
+```
+
+Based on the results from the ADF test and KPSS test , we can conclude that the S&P is stationary 
+
+
+## Statistical tests for DAX
+```{r}
+adf.test(df[,4]) #p-value = 0.01, reject Ho:non-stationary TS
+
+```
+
+
+
+
+```{r}
+kpss.test(df[,4]) #p-value = 0.1, do not reject Ho:stationary TS
+```
+
+Based on the results from the ADF test and KPSS test , we can conclude that the DAX is stationary 
+
+## Statistical tests for FTSE
+```{r}
+adf.test(df[,5]) #p-value = 0.01, reject Ho:non-stationary TS
+
+```
+
+
+```{r}
+kpss.test(df[,5]) #p-value = 0.1, do not reject Ho:stationary TS
+```
+
+Based on the results from the ADF test and KPSS test , we can conclude that the FTSE is stationary 
+
+
+## Statistical tests for NIKKEI
+```{r}
+adf.test(df[,6]) #p-value = 0.01, reject Ho:non-stationary TS
+
+```
+
+
+```{r}
+kpss.test(df[,6]) #p-value = 0.1, do not reject Ho:stationary TS
+```
+
+
+Based on the results from the ADF test and KPSS test , we can conclude that the NIKKEI is stationary 
+
+
+## Statistical tests for BOVESPA
+```{r}
+adf.test(df[,7]) #p-value = 0.01, reject Ho:non-stationary TS
+
+```
+
+
+
+```{r}
+kpss.test(df[,7]) #p-value = 0.1, do not reject Ho:stationary TS
+```
+
+Based on the results from the ADF test and KPSS test , we can conclude that the BOVESPA is stationary . 
+
+
+All the trends or TS are stationary according to KPSS test because none of the KPSS levels are large enough to reject the null hypothesis which states that TS is stationary .
+
+All the ADF tests reject the null hypothesis and accept the alternative hypothesis that the TS is stationary
+
+
+ ### 2. Split the data into train and test, keeping only the last 10 rows for test (from date 9-Feb-11). Remember to use only train dataset for step 3 to step 6.
+
+```{r}
+train.data <- df[1:(nrows-10),]
+test.data <- df[(nrows-9):nrows,]
+```
+
+
+```{r}
+head(test.data)
+```
+
+### 3. Linearly regress ISE against the remaining 5 stock index returns - determine which coefficients are equal or better than 0.02 (*) level of significance?
+
+
+```{r}
+linear.model <- lm(ISE ~  SP + DAX + FTSE + NIKKEI+ BOVESPA, data = train.data)
+summary(linear.model)
+```
+
+The cofficients of DAX, FTSE, and NIKKEI have P-values that are equal or better than 2% or 0.02(*) level of significance
+
+
+The coefficients of SP and BOVESPA do not have coefficients that are significant at 2% level
+
+
+About half the variance is explained by the regression model . 
+
+
+We have to explore the fitted model first 
+
+
+
+```{r}
+train.data$ISE_fitted_val <- predict(linear.model)
+
+melt(train.data, id.vars=('date'), measure.vars=c('ISE', 'ISE_fitted_val')) %>% 
+  ggplot(aes(x=date, y=value, color=variable)) + geom_point()
+
+
+
+
+```
+
+
+```{r}
+
+ggplot(train.data, aes(x=ISE, y=ISE_fitted_val)) + geom_point()
+```
+
+## Plotting the residuals 
+```{r}
+par(mfrow=c(2,1))
+plot(linear.model$residuals)
+hist(linear.model$residuals)
+```
+
+The residuals from the above linear model are normally distributed and show no particular pattern. The fit also looks decent. 
+
+
+A very clear linear pattern is seen when we plot actual vs the fitted values . However the overall scatter plot indicate that the fitted values havent really fully captured lot of variance in the training data . 
+
+### 4. For the non-significant coefficients, continue to lag by 1 day until all coefficients are significant at 0.01 (*). Use slide() function from package DataCombine. Remember you will need to lag, so you slideBy = -1 each step. How many lags are needed for each independent variable?
+
+We have to improve the model by lagging the variables or TS with non-significant coefficients( SP and BOVESPA) until 
+they become significant
+
+
+```{r}
+lag.data <-slide(train.data, Var = 'BOVESPA', TimeVar='date',NewVar = 'BOVESPAlag1', slideBy = -1, reminder = F)
+lag.data <- na.omit(lag.data)
+drops = c('date', 'BOVESPA', 'ISE_fitted_val')
+summary(lm(ISE ~ ., data=lag.data[,!names(lag.data) %in% drops]))
+```
+
+
+
+```{r}
+head(lag.data)
+```
+
+
+
+```{r}
+lag.data <-slide(lag.data, Var = 'SP', TimeVar='date',NewVar = 'SPlag1', slideBy = -1, reminder = F)
+lag.data <- na.omit(lag.data)
+drops = c('date', 'SP', 'ISE_fitted_val','BOVESPA')
+summary(lm(ISE ~ ., data=lag.data[,!names(lag.data) %in% drops]))
+```
+
+
+
+
+```{r}
+lag.data <-slide(lag.data, Var = 'SPlag1', TimeVar='date',NewVar = 'SPlag2', slideBy = -1, reminder = F)
+lag.data <- na.omit(lag.data)
+drops = c('date', 'SP','SPlag1','ISE_fitted_val','BOVESPA')
+summary(lm(ISE ~ ., data=lag.data[,!names(lag.data) %in% drops]))
+```
+
+
+Two and one lag(s) were needed for `SP` and `BOVESPA`, respectively to make their coefficients significant
+
+```{r}
+linear.model.lag <- lm(ISE ~ BOVESPAlag1 + DAX + FTSE + NIKKEI + SPlag2, data = lag.data)
+```
+
+
+```{r}
+summary(linear.model.lag)
+```
+
+### 5. Find correlations between ISE and each independent variable. Sum the square of the correlations. How does it compare to R-squared from #4?
+
+```{r}
+summary(linear.model.lag)$r.squared
+
+```
+
+```{r}
+head(lag.data)
+
+```
+
+# Removing the unwanted variables 
+```{r}
+lag.data <- lag.data[ , !(names(lag.data) %in% c('date','BOVESPA', 'SP','ISE_fitted_val','SPlag1'))]
+```
+
+
+
+```{r}
+sum(c(
+  cor(lag.data$ISE, lag.data$SPlag2),
+  cor(lag.data$ISE, lag.data$DAX),
+  cor(lag.data$ISE, lag.data$FTSE),
+  cor(lag.data$ISE, lag.data$NIKKEI),
+  cor(lag.data$ISE, lag.data$BOVESPAlag1)
+  )^2
+)
+```
+
+The sum of squares of correlations value is twice as large as the R-squared value
+
+### 6. Concept question 1 - why do you think the R-squared in #4 is so much less than the sum of square of the correlations?
+
+The main reason for this could be the multicollinearity between different variables . The variables are not independent of each other and are correlated/dependent on each other . This makes sense because the market returns are dependent and vary with each other . 
+
+If the economy is going well or if the market is going strong , we can expect positive returns from different stock exchanges belonging to different countries . In a globalized economy , all the stock markets are dependent on each other . A hurricane is going to sink all the boats and a rising tide is going to lift all the boats. 
+
+R-squared is defined as the percentage of variance explained by the model. We cannot just sum up all the correlations of each individual variables. The variance explained by NIKKEI might also be explained by FTSE. They are not independent from each other.
+
+
+### 7. Take the test dataset - perform the same lags from #4 and call predict() function using the lm regression object from #4. Why do you need to use the lm function object from #4?
+
+```{r}
+test.lag.data <-slide(test.data, Var = 'SP', TimeVar='date',NewVar = 'SPlag1', slideBy = -1, reminder = F)
+test.lag.data <-slide(test.lag.data, Var = 'SPlag1', TimeVar='date',NewVar = 'SPlag2', slideBy = -1, reminder = F)
+test.lag.data <-slide(test.lag.data, Var = 'BOVESPA', TimeVar='date',NewVar = 'BOVESPAlag1', slideBy = -1, reminder = F)
+test.lag.data <- na.omit(test.lag.data)
+
+```
+
+
+
+
+```{r}
+drops = c('date', 'BOVESPA', 'SP', 'SPlag1')
+test.lag.data <- test.lag.data[ , !(names(test.lag.data) %in% drops)]
+```
+
+
+```{r}
+pred.test <- predict(linear.model.lag, test.lag.data)
+```
+
+We had to use the lm function  object from the step 4 because it has certain coefficients  that only apply indexes of the lagge stock returns. It doesnt make any sense to apply that model on unlagged variables . The model tat we used in the step #4 is what we used for the training data with the lagged sequences  , which has statistically significant variables . 
+
+Moreover we are using the original linear model object from the training because here we are testing a fitted model in time series forecasting not training a new model. 
+
+```{r}
+mean(abs(test.lag.data[1:8,1] - pred.test))
+```
+
+The predicted estimates differ from the actual values of the test lag data by 0.0055 on an average .
+
+Due to the lagging of the variables , I had to get rid of the 2 two rows across the entire test lag dataframe .
+```{r}
+test.lag.data
+```
+
+```{r}
+plot(test.lag.data$ISE, pred.test)
+```
+
+### 8. Concept question 2 - what do you find in #1 and why?
+
+All the plot.ts graphs showed that the means of the time series plots for all the stock exchanges returns were constant and also the ACF graphs indicated that the autocorrealtion is constant over time . None of the time series had an obvious trend .More or less they were centered at 0 i.e constant  . These two graphs concluded that the time series for all the 
+variables were stationary . 
+
+On top of that , we also performed the augmented dicky fuller test (ADF test) and also Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test and the results from these statistical tests in terms of the p-values indicated that all the time series for all the variables were stationary . The stock exchange returns had no decreasing or increasing trend over the time. Moreover they also do not have varying autocovariance between set periods of time. 
+
+To summarize , we found qualitatively ( through plots) and quantitatively (through statistical tests) that all the time series for all the stock exchange returns were stationary. The conclusion is likely sound as both of these methods conclude the same results . 

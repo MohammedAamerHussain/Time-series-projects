@@ -1,0 +1,511 @@
+---
+title: "Assignment 3"
+author: "Aamer hussain"
+date: "2/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("/Users/mohammedhussain/Desktop/UCHICAGO assigments/Time series/Assignment 3")
+```
+
+```{r}
+install.packages("pscl", repos = "https://cran.rstudio.com")
+```
+
+
+## Installing the packages 
+```{r}
+install.packages('plyr', repos = "http://cran.us.r-project.org")
+install.packages('tseries', repos = "http://cran.us.r-project.org")
+install.packages('forecast', repos = "http://cran.us.r-project.org")
+```
+ 
+
+## Loading the libraries
+```{r}
+#library(dplyr)
+library(reshape2)
+library(ggplot2)
+library('tseries')
+library(zoo)
+library(xts)
+library(openxlsx)
+library(gdata)
+library(forecast)
+```
+
+
+```{r}
+df = read.xlsx("Unemployment_GDP_UK.xlsx", 1)
+```
+
+```{r}
+str(df)
+```
+
+```{r}
+for( i in 2:nrow(df)) {
+  if(is.na(df$Year[i])) {
+    df$Year[i] <- df$Year[i-1]
+  }
+}
+
+```
+
+
+```{r}
+head(df)
+```
+
+
+
+
+```{r}
+quarters <- as.yearqtr(paste(df$Year, df$Quarter, sep="-"))
+quarters
+```
+
+```{r}
+df.train <- df[df$Year < 1969,]
+df.test <- df[df$Year == 1969,]
+
+```
+
+```{r}
+df.train
+
+```
+
+```{r}
+df.test
+
+```
+
+
+# Converting into xts objects
+```{r}
+UN.data  <- as.xts(df$UN,  order.by=quarters)
+GDP.data <- as.xts(df$GDP, order.by=quarters)
+```
+
+
+
+
+```{r}
+head(UN.data)
+```
+
+
+```{r}
+head(GDP.data)
+```
+
+
+```{r}
+par(mfrow=c(2,1))
+plot.xts(UN.data)
+plot.xts(GDP.data)
+```
+
+
+## Checking for stationarity for the Unemployment as well as for the GDP data
+
+```{r}
+plot.ts(df$UN,main="UN Time-Series Plot")
+```
+
+The unemployment data does not look stable or centered around the mean which doesnt seem to be constant. There is no downward or upward trend per se. Hence not stationary 
+
+## We can also check for seasonality 
+
+```{r}
+par(mfrow=c(1,2))
+acf(df$UN,length(df$UN),main='')
+pacf(df$UN,length(df$UN),main='')
+```
+
+There is definitely no seasonality but there is an obvious indication of cyclicality because as per the observation , it is taking more than a few quarters( 4 to 8) to repeat any specific pattern.
+
+The mean and autocovariance of the unemployment data are not constant over time which indicates non-stationarity.
+
+
+We have 2 two statistical tests at our disposal to determine if a time series is stationary or not. one of the test is called augmented dickey fuller(ADF) test and the other one is called KPSS test. 
+
+The null hypothesis of ADF test states that the time series has uniroot and that the TS is stationary . Where as the KPSS test tests against the alternative hypothesis that the TS has uni root . 
+
+If any time series has a uni root , it indicates that it has a stochastic trend which is unpredictable 
+
+A low p value( less than 0.05) in ADF test implies that the null hypothesis( that TS is non- stationary) is rejected and alternate hypothsis is accepted which is that the TS is stationary .
+
+A high p value( greater than 0.05) in KPSS test implies that the null hypothesis( that TS is stationary) is not rejected which would imply that the time series is stationary .
+
+
+# Augmented Dicky Fuller test for the UN data
+
+```{r}
+adf.test(df$UN) #p-value = 0.09, do not reject Ho:non-stationary TS
+```
+
+# KPSS test for the UN data
+
+```{r}
+kpss.test(df$UN) #p-value = 0.01, reject Ho:stationary TS
+```
+
+
+Based on the results from the ADF test and KPSS test , we can conclude that the unemployment UN  data is non stationary.
+
+
+
+```{r}
+plot.ts(df$GDP,main="GDP Time-Series Plot")
+```
+
+The GDP time series shows an obvious upward trend . We can probably try to remove the trend in order to make it stationary by first differencing. This can only be determined and finalizes by first performing the statitistical tests on top of this data.
+
+## We can also check for seasonality for theGDP data
+
+```{r}
+par(mfrow=c(1,2))
+acf(df$GDP,length(df$GDP),main='')
+pacf(df$GDP,length(df$GDP),main='')
+```
+
+
+
+Seasonality is not clearly visible because there is no particular or specific repeating pattern in the ACF graph nor in the time series plot.
+
+
+# Augmented Dicky Fuller test for the GDP data
+
+```{r}
+adf.test(df$GDP) #p-value = 0.12, do not reject Ho:non-stationary TS
+```
+
+# KPSS test for the GDP data
+
+```{r}
+kpss.test(df$GDP) #p-value = 0.01, reject Ho:stationary TS
+```
+
+Based on the results from the ADF test and KPSS test , we can conclude that the GDP time series data is non stationary based on the statitical tests results.
+
+Both the levels of the KPSS tests and ADF test are  high enough to reject the null hypothesis and accept the 
+alternate hypothesis that the UN and the GDP time series are non-stationary.
+
+Now we have to implement ARIMA modelling to see if we can remove the trend from the GDP time series to make it stationary .
+
+
+###  **  ARIMA modeling:  **
+
+
+###  1. Use datasets from 1955 to 1968 to build an ARMA or ARIMA models for UN and GDP. Use auto.arima() from package forecast.  
+
+
+# Converting the data frame into time series data
+```{r}
+data <- ts(df,start = c(1955,1), frequency = 4)
+```
+
+
+#Splitting the time series data into train and test data
+```{r}
+train <- window(data, end = c(1968,4))
+```
+
+
+```{r}
+train
+```
+
+
+
+```{r}
+test <- window(data, start = c(1969,1), end = c(1969,4))
+```
+
+
+```{r}
+test
+```
+
+
+```{r}
+UN.train <- train[,3]
+UN.test <- test[,3]
+```
+
+
+```{r}
+GDP.train <- train[,4]
+GDP.test <- test[,4]
+```
+
+```{r}
+UN.arima <- auto.arima(UN.train)
+summary(UN.arima)
+```
+
+
+```{r}
+UN.arma <- auto.arima(UN.train, d=0)
+summary(UN.arma)
+```
+
+```{r}
+GDP.arima <- auto.arima(GDP.train)
+summary(GDP.arima)
+```
+
+
+
+
+```{r}
+GDP.arma <- auto.arima(GDP.train, d=0)
+summary(GDP.arma)
+```
+
+
+
+
+
+### 2. Justify why you chose (ARMA or ARIMA) one over the other.  Note there will be 2 models, one for UN and another for GDP.
+
+
+ARMA can only be applied to the stationary time series data . As none of the UN or the GDP time series are stationary by looking at the plot and performing various statistical tests , we have decided to go with the ARIMA model for both UN and GDP data.
+Stationarity is a requirement of the ARMA model where as the ARIMA model can handle the non-stationarity time series data without any issue by first differencing to achieve the stationarity before applying the ARMA(p,q) model. ARIMA best model for UN  we got was (1,1,0) model which quite obviously suggests the first differencing to achieve stationarity. So therefore we choose the ARIMA model for the unemployment UN data and also for the GDP data because they are non-stationary.
+
+# Lets compare the AIC values for both ARMA and ARIMA model for the UN data
+```{r}
+c('ARIMA AIC'=UN.arima$aic,
+  'ARMA AIC'=UN.arma$aic)
+```
+
+After going through a matrix of posibilities, the best model we could obtain was  an ARIMA one, not ARMA model. It returned ARIMA(1,1,0). Since d=1, it is an ARIMA model. Moreover, when we try to force d=0(no first differencing), which means forcing an ARMA model, the AIC for ARMA model turned out to be larger than the AIC for the ARIMA model. As we always want a model with the lowest AIC , ARIMA is our best option because the AIC value of the ARMA model is higher when compared to the AIC value of he ARIMA model.
+
+# Lets compare the AIC values for both ARMA and ARIMA model for the GDP data
+```{r}
+c('ARIMA AIC'=GDP.arima$aic,
+  'ARMA AIC'=GDP.arma$aic)
+```
+
+
+After going through a matrix of posibilities, the best model we could obtain was  an ARIMA one, not ARMA model. It returned ARIMA(1,1,0). Since d=1, it is an ARIMA model. Moreover, when we try to force d=0(no first differencing), which means forcing an ARMA model, the AIC for ARMA model turned out to be larger than the AIC for the ARIMA model. As we always want a model with the lowest AIC , ARIMA is our best option because the AIC value of the ARMA model is higher when compared to the AIC value of he ARIMA model.
+
+ARIMA model fixes the non-stationarity issue by diffencing at 1. Therefore we prefer ARIMA in this particular case for both UN and GDP time series because it does the much needed transformation that is required to achieve stationarity.
+
+The ARIMA models usually do the first differencing on the time series data before actually applying the ARMA model . As we know the 'I' in the ARIMA stands for integrated meaning first differencing . These ARIMA models are extremely helpful when working with the non-stationary time series data with a trend. As we observed after doing lots of plotting and applying various statistical tests that both the UN and GDP times series were non-stationary . So ARIMA is the only time series model that is best suited and appropriate for UN and GDP time series .
+
+
+
+### 3.Use the chosen UN and GDP models to forecast the UN and the GDP for 1969. Use forecast() from package forecast
+
+
+```{r}
+UN.forecast.1969  <- forecast(UN.arima, h=4)
+GDP.forecast.1969 <- forecast(GDP.arima, h=4)
+```
+
+
+```{r}
+UN.forecast.1969
+```
+
+
+
+```{r}
+GDP.forecast.1969
+```
+
+
+```{r}
+par(mfrow=c(2,1))
+plot(UN.forecast.1969 , main = 'Unemployment ARIMA forecast')
+plot(GDP.forecast.1969, main = 'GDP ARIMA forecast')
+```
+
+
+### 4. Compare your forecasts with the actual values using error = actual - estimate and plot the errors.
+
+
+
+```{r}
+UN.error  <- UN.test  - UN.forecast.1969$mean
+GDP.error <- GDP.test - GDP.forecast.1969$mean
+par(mfrow=c(2,1))
+plot(UN.error , main = 'UN Errors')
+plot(GDP.error, main = 'GDP Errors')
+```
+
+
+
+
+### 5.Calculate the sum of squared error for each UN and GDP models.
+
+
+```{r}
+sum(UN.error^2)
+sum(GDP.error^2)
+```
+
+### Regression 
+
+## UN as the independent variable and GDP as the dependent variable - use data from 1955 to 1968 to build the model. Forecast for 1969 and plot the errors as a percentage of the mean. Also calculate the sum of squared(error) as a percentage of the mean.
+
+
+```{r}
+model.GDP<- lm(GDP ~ UN, train)
+```
+
+
+
+```{r}
+
+pred.GDP <- predict(model.GDP, newdata = test)
+
+```
+
+
+```{r}
+reg.error.GDP <- GDP.test - pred.GDP
+reg.error.GDP
+```
+
+
+```{r}
+GDP.error.pct <- reg.error.GDP / mean(GDP.test)
+plot(GDP.error.pct , type = 'b', main = "SSE percentage of our GDP prediction", ylab = "SSE ratio of mean")
+```
+
+```{r}
+df.test$GDP_pred <- pred.GDP
+```
+
+```{r}
+df.test
+```
+
+```{r}
+matplot(x=df.test$Quarter, y=df.test[,c("GDP", "GDP_pred")], ylab = "Actual - Pred ",type='l')
+```
+
+
+
+```{r}
+df.test$GDP_error <- df.test$GDP_pred - df.test$GDP
+df.test$GDP_error_pct <- df.test$GDP_error / mean(df.test$GDP)
+```
+
+
+```{r}
+ggplot(df.test, aes(x=Quarter, y=GDP_error_pct)) + 
+  geom_bar(stat='identity') + 
+  geom_text(aes(label=paste0(round(GDP.error.pct*100, 1), '%')), vjust=-0.5, color="white") + 
+  labs(x='Quarter in 1969', y='Error as a % of Mean', title='GDP Regression Forecast')
+```
+
+
+# Calculating the sum of squared errors as a percentage of mean for the GDP forecast
+```{r}
+SSE.GDP.pct <- sum(reg.error.GDP**2)/mean(GDP.test)
+SSE.GDP.pct
+```
+
+
+
+## 2. GDP as the independent variable and UN as the dependent variable - use data from 1955 to 1968 to build the model.  Forecast for 1969 and plot the errors as a percentage of the mean. Also calculate the sum of squared(error) as a percentage of the mean of the actual values.
+
+```{r}
+model.UN<- lm(UN ~ GDP, train)
+```
+
+
+
+```{r}
+
+pred.UN <- predict(model.UN, newdata = test)
+
+```
+
+
+```{r}
+reg.error.UN <- UN.test - pred.UN
+reg.error.UN
+```
+
+
+```{r}
+UN.error.pct <- reg.error.UN / mean(UN.test)
+plot(UN.error.pct , type = 'b', main = "SSE percentage of our UN prediction", ylab = "SSE ratio of mean")
+```
+
+```{r}
+df.test$UN_pred <- pred.UN
+```
+
+```{r}
+df.test
+```
+
+
+```{r}
+matplot(x=df.test$Quarter, y=df.test[,c("UN", "UN_pred")],ylab = "Actual - Pred ", type='l')
+```
+
+
+```{r}
+df.test$UN_error <- df.test$UN_pred - df.test$UN
+df.test$UN_error_pct <- df.test$UN_error / mean(df.test$UN)
+
+```
+
+
+```{r}
+ggplot(df.test, aes(x=df.test$Quarter, y=UN_error_pct)) + 
+  geom_bar(stat='identity') + 
+  geom_text(aes(label=paste0(round(UN_error_pct*100, 1), '%')), vjust=-0.5, color="white") + 
+  labs(x='Quarter in 1969', y='Error as a % of Mean', title='UN Regression Forecast')
+```
+
+# Calculating the sum of squared errors as a percentage of mean for the UN forecast
+```{r}
+SSE.UN.pct <- sum(reg.error.UN**2)/mean(UN.test)
+SSE.UN.pct
+```
+
+
+### 3.Compare the 2 models using the sum of squared error as a percentage of the mean of the actual values - any reason to believe which should be the independent and the dependent variable ?
+
+```{r}
+c('SSE pct mean GDP'=SSE.GDP.pct,
+  'SSE pct mean UN'=SSE.UN.pct)
+```
+
+
+Since we have the errors from 2 different regression models (both GDP and UN) are of different order to magnitude , it was really difficult to compare the forecast errors without normlization . One of the ways to normalize these errors was to take sum of the squared errors for each of the GDP and UN regression model and divide them by the mean , so that we can bring them on a single scale by obtaining a percentage and effectively compare these models.
+
+After the comparison , we can easily see that the sum of the squared errors as a percentage of the mean of the GDP(4.465) is much less than the sum of the squared errors as a percentage of the mean of UN(31.15). This clearly indicates that the regression model with GDP as the dependent variable has turned out to be the one with more accurate predictions.. Therefore as per our analysis , GDP should be the dependent variable and the UN should be the independent variable because GDP as a response performs better in terms of the time series forecast.
+
+
+This observation makes a lot of sense as itv indicates that the GDP of a country is dependent on unemployment rate instead of unemployment rate being dependent on GDP.UN does a much better task of predicting GDP compared to GDP  predicting
+UN.
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
